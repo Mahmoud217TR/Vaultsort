@@ -1,0 +1,71 @@
+name: Translation or RTL issue
+description: Correct wording, report missing translations/RTL problems, or propose a language.
+title: "[Translation]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English is the canonical/default locale; Arabic with RTL is currently supported. Additional translations are welcome.
+        See [CONTRIBUTING.md → Translations](https://github.com/Mahmoud217TR/Vaultsort/blob/main/CONTRIBUTING.md#translations).
+        **Never attach real vault exports or paste passwords, TOTP secrets, API keys, or access tokens.**
+        Use synthetic data and sanitize screenshots, JSON examples, private paths, account names, and personal data.
+        Security vulnerabilities belong in [private reports](https://github.com/Mahmoud217TR/Vaultsort/blob/main/SECURITY.md), not this form.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This report/proposal contains no real vault exports, credentials, or sensitive personal information.
+          required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Type of request
+      options:
+        - Incorrect translation
+        - Missing translation
+        - RTL / layout issue
+        - Proposal for a new language
+    validations:
+      required: true
+  - type: input
+    id: language
+    attributes:
+      label: Language and locale code
+      placeholder: Arabic (ar), or the name/code of a proposed language
+    validations:
+      required: true
+  - type: dropdown
+    id: direction
+    attributes:
+      label: Writing direction
+      options:
+        - LTR (left to right)
+        - RTL (right to left)
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Affected text/screen or proposal scope
+      description: Give a locale key if known, or the screen/steps. For a new language, describe the intended locale and scope.
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Suggested correction or expected layout
+      description: Include natural wording and context. For a language proposal, say whether you can contribute/review it.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Review and verification (optional)
+      description: Native/fluent reviewer availability; browser, theme, and viewport for layout issues. Note any translation tools used and human review performed.
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Sanitized screenshots (optional)
+      description: Use synthetic vault data only. Remove credentials, account details, private domains, IDs, and personal information.

@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest a focused improvement to Vaultsort's local-first workflow.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vaultsort edits unencrypted exports locally; it is not a password manager or a cloud service.
+        **Never attach real vault exports or paste passwords, TOTP secrets, API keys, or access tokens.**
+        Sanitize screenshots and JSON examples; use synthetic data only. Report vulnerabilities [privately](https://github.com/Mahmoud217TR/Vaultsort/blob/main/SECURITY.md).
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This request contains no real vault exports, credentials, or sensitive personal information.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the workflow and who benefits, without real vault details.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Keep the proposal focused and compatible with local-only processing.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy, preservation, and UI considerations
+      description: Consider storage/network access, unknown JSON properties, English/Arabic, RTL, and light/dark mode. Say if none are affected.
+    validations:
+      required: true

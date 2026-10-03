@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible Vaultsort defect using synthetic data.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach real vault exports. Never paste passwords, TOTP secrets, API keys, or access tokens.**
+        Use synthetic data and sanitize screenshots, JSON examples, filenames, URLs, and browser output.
+        For a suspected vulnerability, stop here and follow [SECURITY.md](https://github.com/Mahmoud217TR/Vaultsort/blob/main/SECURITY.md) for private reporting.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: This report contains only synthetic/sanitized examples, no real vault exports, credentials, or sensitive personal data.
+          required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What went wrong?
+      description: Describe the defect without including real vault contents.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use a minimal synthetic vault if needed. Never attach a real export, even a redacted original.
+      placeholder: |
+        1. Open a synthetic JSON file
+        2. Perform an action
+        3. Observe the problem
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Commit/build if known, browser/version, OS, and local or hosted use. Omit usernames, private paths, and sensitive URLs.
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - English (en)
+        - Arabic (ar, RTL)
+        - Other / local changes
+    validations:
+      required: true
+  - type: dropdown
+    id: theme
+    attributes:
+      label: Theme
+      options:
+        - Light
+        - Dark
+        - Both
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Optional sanitized evidence
+      description: Screenshots or minimal synthetic JSON only. Remove secrets, account names, private domains, IDs, and personal data.

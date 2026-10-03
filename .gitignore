@@ -1,0 +1,53 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+
+# Environment/local settings; examples must contain placeholders only.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+
+# Temporary files, logs, and backups.
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+*.bak
+*.backup
+*.json.bak
+*.json.backup
+/tmp/
+/temp/
+/.local/
+
+# Local sensitive data. Real vaults should live outside this checkout.
+/vaults/
+/vault-exports/
+/backups/
+/private/
+/sensitive-data/
+/local-data/
+*.key
+*.pem
+*.p12
+*.pfx
+*.kdbx
+id_rsa
+id_ed25519
+
+# Common root-level export/download names, not all JSON or synthetic fixtures.
+/vault.json
+/vault-*.json
+/*-vault.json
+/*.vault.json
+/bitwarden*.json
+/vaultwarden*.json
+/original-*.json
+/vault*.json.*
