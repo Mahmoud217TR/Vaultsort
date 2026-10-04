@@ -22,11 +22,12 @@ The dev server binds to localhost. HMR is intentionally disabled to avoid its ne
 - Discuss substantial changes in an issue first. Link the issue in your PR, describe behavior and tradeoffs, and include reproduction steps/test results. There is no required issue for a small fix or translation correction.
 - Add regression tests for non-trivial logic and security-sensitive changes. Update English strings, affected translations, and documentation together; record user-visible changes under `[Unreleased]` in `CHANGELOG.md`.
 - For UI work, include sanitized screenshots using synthetic data. Check English/LTR and Arabic/RTL in both light and dark themes, including narrow layouts and keyboard focus.
-- Complete applicable PR checklist items. Maintainer review is required; address feedback before merging. CI verifies pushes to main and pull requests targeting main; also run the checks yourself. No automatic merge or release publication is configured.
+- Complete applicable PR checklist items. Maintainer review is required; address feedback before merging. CI verifies pushes to main and pull requests targeting main; also run the checks yourself. Optional Pages demo publication is disabled by default; see [maintainer setup](README.md#publish-the-optional-demo-maintainers). No automatic merge or package release is configured.
 
 ## Testing, linting, and formatting
 
 ```bash
+npm ci
 npm run lint
 npm test
 npm run build
@@ -36,6 +37,11 @@ git diff --check
 ESLint covers Vue, TypeScript, and JavaScript. The build also runs strict TypeScript checking. There is no separate formatter or formatting script: follow surrounding style, use valid UTF-8/JSON/YAML, and avoid whitespace-only rewrites.
 
 Vitest tests use jsdom, not a real browser. Manually check affected screens in a browser and record which language/theme/layout combinations you tested. Prefer existing dependencies and simple native browser features; do not add a library where a small existing helper is enough.
+
+Workflow/guard tests are static and mocked checks, not proof of GitHub permissions or a live
+deployment. Record skipped browser/live checks explicitly. Demo build and deployment require
+successful verification of the same main SHA and exact `VAULTSORT_PAGES_ENABLED=true`; fork
+PRs cannot publish. Maintain forward-only main history; recover with a new verified revert.
 
 ## Design and architecture
 

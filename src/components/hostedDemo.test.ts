@@ -157,4 +157,36 @@ describe('hosted import gates', () => {
     await wrapper.get('.import-button').trigger('click'); expect(picks).toBe(1)
     await change(); expect(reads).toBe(1); expect(sessionStorage.length).toBe(0)
   })
+  it('restores the initiating focus after cancellation', async () => {
+    const button = wrapper.get('.import-button').element as HTMLButtonElement
+    button.focus()
+    await wrapper.get('.import-button').trigger('click')
+    await warning().get('.demo-cancel').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(button)
+  })
+  it('retains acknowledgment through close/reopen without retaining vault data', async () => {
+    await proceed(); await change(); await wrapper.get('dialog .primary').trigger('click')
+    await wrapper.findAll('.sidebar-footer button').find(button => button.text() === 'Close vault')!.trigger('click')
+    expect(wrapper.find('.item-table').exists()).toBe(false)
+    expect(sessionStorage.length).toBe(1)
+    await wrapper.get('.import-button').trigger('click')
+    expect(wrapper.find('.hosted-warning').exists()).toBe(false)
+    expect(picks).toBe(2)
+  })
+  it('clears storage-failure authorization even when the selected file cannot be read', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    class FailedReader {
+      onload = null
+      onerror: (() => void) | null = null
+      readAsArrayBuffer() { queueMicrotask(() => this.onerror?.()) }
+      abort() {}
+    }
+    vi.stubGlobal('FileReader', FailedReader)
+    await proceed(); await change()
+    expect(wrapper.get('[role=alert]').text()).toContain('Could not read')
+    await wrapper.get('.import-button').trigger('click')
+    expect(wrapper.find('.hosted-warning').exists()).toBe(true)
+    expect(picks).toBe(1)
+  })
 })

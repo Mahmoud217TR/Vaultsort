@@ -65,7 +65,54 @@
   fixed and rebuilt successfully. This is a partial-checkpoint check, not T030 completion.
 - After-implementation hook check: no `.specify/extensions.yml`; no hooks to dispatch.
 
-## Remote and retained exclusions
+## Implementation completed after validation waiver
+
+The user explicitly requested skipping validation and finishing implementation. This waives
+the T017 browser prerequisite for publication wiring only; it does not convert any unexecuted
+validation into a pass. The earlier checkpoint above is historical.
+
+- Added demo-build/deploy to `.github/workflows/ci.yml`, with explicit opt-in/main/nonfork
+  eligibility, default fail-stop dependencies, pinned official actions, exact event SHA,
+  Node24, Pages-derived build base and demo flag, dist-only same-run artifact and symlink guard.
+  Only deploy has Pages write/OIDC authority; no checkout/npm/artifact code executes there.
+- Publication lock uses the planned group, queue:max/cancel-in-progress:false. Its inline
+  read-only main-ref check executes on every attempt after lock/environment approval; exact
+  commit/ref/SHA shape errors, HTTP and transport failures fail closed without response/token
+  logging. Valid stale revisions write a skip summary; only fresh output runs deploy-pages.
+- Added eight initial workflow regressions before code: expected red for missing jobs/guard,
+  then green. Actual inline guard (not a substitute helper) is exercised with fresh/stale,
+  malformed/missing ref, HTTP/transport failures and repeated stale/rerun checks. These model
+  ordering under a lock, not GitHub's live scheduler or permissions.
+- Completed T009's remaining jsdom checks for initiating focus, close/reopen retention and
+  read-error storage-fallback cleanup. Branding tests check startup ordering/local-base default
+  and manifest-relative root/subdirectory resolution; actual browser/resource requests are deferred.
+- README separates recommended reviewed local use from optional demo and supplies maintainer
+  Pages/environment/variable setup, default-disabled behavior, limits and new-revert recovery.
+  CONTRIBUTING/SECURITY/CHANGELOG match the fixed hosted-session exception, unchanged preference
+  boundary and CSP; documents make no live site/audit claim. Relative documentation links and
+  commands agree with existing scripts and workflow. No app dependencies/assets/palette added.
+- T009, T018–T021, T024–T026 and T029 are now complete: 24/30 tasks checked. Remaining
+  T017/T022/T023/T027/T028/T030 are validation/evidence tasks, intentionally unchecked rather
+  than relabeled successful. Required lint/tests/build still run; full acceptance is not claimed.
+- No commit/push/settings changes, credentials, public publication, browser/offline matrix,
+  fresh root/subdirectory serving checks or actionlint execution performed in this continuation.
+  **CI/Pages not live-executed.** Live source/artifact provenance, forks/failure injection,
+  permissions/environment/concurrency and deployed URL remain unverified.
+
+### Left for the maintainer
+
+Final required local checks after `npm ci`: lint passed, 179 tests across 11 suites passed,
+TypeScript/Vite production build passed, and `git diff --check` passed. No lockfile/dependency
+change. Optional actionlint remains unavailable/not executed; browser/live validation skipped.
+Post-implementation hook check again found no `.specify/extensions.yml`.
+
+Review/commit/merge the changes into main; enable Actions and Pages Source: GitHub Actions;
+protect github-pages for main; set repository variable VAULTSORT_PAGES_ENABLED to exact true;
+trigger an eligible main push or rerun current eligible main. Inspect the first deployment run
+and page_url before advertising it. Deferred browser/root/subdirectory/offline/live acceptance
+is still recommended, particularly before using real vaults. Opt-out does not take down a site.
+
+## Retained evidence exclusions
 
 **CI/Pages not live-executed.** No remote settings, credentials, push, commit, environment
 activation or publication is authorized/performed. Fork events, hosted failures, actual
