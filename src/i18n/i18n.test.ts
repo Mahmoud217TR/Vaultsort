@@ -22,6 +22,16 @@ function flatten(value: object, prefix = ''): Record<string, string> {
 }
 
 describe('locale coverage', () => {
+  it('has five fixed hosted trust statements and localized voluntary actions without vault interpolation', () => {
+    for (const messages of [en, ar]) {
+      for (const key of ['processing', 'upload', 'trust', 'recommend', 'choice', 'continue', 'local', 'guidance', 'blocked', 'label', 'title'] as const) {
+        expect(messages.hostedDemo[key]).not.toMatch(/\{(?:name|path|filename|secret)\}/)
+        expect(messages.hostedDemo[key].trim()).not.toBe('')
+      }
+    }
+    expect(en.hostedDemo.trust).toContain('compromised')
+    expect(en.hostedDemo.choice).toContain('voluntary')
+  })
   it('has matching keys and interpolation parameters, and renders every message in both languages', () => {
     const english = flatten(en), arabic = flatten(ar)
     expect(Object.keys(arabic).sort()).toEqual(Object.keys(english).sort())

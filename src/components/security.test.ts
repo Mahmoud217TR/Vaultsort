@@ -271,13 +271,24 @@ describe('editor security', () => {
 })
 
 describe('local-only architecture', () => {
+  it('restricts the hosted session exception to a fixed build-scoped constant', () => {
+    const helper = readFileSync('src/hostedDemo.ts', 'utf8')
+    expect(helper).toContain("import.meta.env.VITE_HOSTED_DEMO === 'true'")
+    expect(helper).toContain('vaultsort.hostedDemoAcknowledged:${import.meta.env.BASE_URL}')
+    expect(helper).toContain("sessionStorage.getItem(key) === '1'")
+    expect(helper).toContain("sessionStorage.setItem(key, '1')")
+    expect(helper).not.toMatch(/localStorage|indexedDB|console\.|fetch\(|File|filename|Date|JSON|cookie/)
+  })
   it('has no vault persistence, network calls, logging, dynamic imports, or vault HTML rendering', () => {
     const sources = (directory: string): string[] => readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
       const path = resolve(directory, entry.name)
       return entry.isDirectory() ? sources(path) : /\.(ts|vue)$/.test(path) && !path.endsWith('.test.ts') && ![resolve('src/test.setup.ts'), resolve('src/preferences.ts')].includes(path) ? [readFileSync(path, 'utf8')] : []
     })
-    const source = sources(resolve('src')).join('\n')
-    for (const pattern of [/\bfetch\s*\(/, /\bXMLHttpRequest\b/, /\bWebSocket\b/, /\bEventSource\b/, /\bsendBeacon\b/, /\blocalStorage\b/, /\bsessionStorage\b/, /\bindexedDB\b/, /console\s*\./, /v-html/, /import\s*\(/]) expect(source).not.toMatch(pattern)
+    const all = sources(resolve('src'))
+    const source = all.join('\n')
+    const helper = readFileSync('src/hostedDemo.ts', 'utf8')
+    expect(all.filter(content => content !== helper).join('\n')).not.toMatch(/\bsessionStorage\b/)
+    for (const pattern of [/\bfetch\s*\(/, /\bXMLHttpRequest\b/, /\bWebSocket\b/, /\bEventSource\b/, /\bsendBeacon\b/, /\blocalStorage\b/, /\bindexedDB\b/, /console\s*\./, /v-html/, /import\s*\(/]) expect(source).not.toMatch(pattern)
     // The only image is the trusted, locally imported brand mark; never vault-derived images.
     expect(source.match(/<img\b[^>]*>/g)).toEqual(['<img class="brand-mark" :src="vaultsortLogo" width="32" height="38" alt="" />'])
     expect(source).toContain("import vaultsortLogo from './branding/vaultsort-logo.svg'")

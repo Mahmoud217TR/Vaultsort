@@ -4,6 +4,12 @@ Vaultsort processes **highly sensitive, plaintext vault data** from unencrypted 
 
 ## Supported versions
 
+Only language/theme preferences may use localStorage through the existing preference modules.
+The sole additional approved exception is hosted-only tab-session acknowledgment: only
+`src/hostedDemo.ts` may access `vaultsort.hostedDemoAcknowledged:<BASE_URL>` in sessionStorage,
+with exact value `'1'`. Ordinary local builds must not access it. No vault-derived values or
+other application state may be stored.
+
 | Version | Security fixes |
 | --- | --- |
 | Current development code on `main` | Best-effort fixes during pre-release development |

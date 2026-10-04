@@ -32,6 +32,7 @@ _Screenshots coming soon: import screen, folder management, and English/Arabic w
 
 - Original bytes, the working document, drafts, and history stay in browser memory. Vaultsort has no backend, account, telemetry, service worker, or vault persistence.
 - Only `vaultsort.language` and `vaultsort.theme` use LocalStorage. Vault contents, filenames, search terms, and history are not stored there.
+- The sole additional approved storage exception is hosted-only tab-session acknowledgment: only `src/hostedDemo.ts` may access `vaultsort.hostedDemoAcknowledged:<BASE_URL>` in sessionStorage, with exact value `'1'`. Ordinary local builds must not access it. No vault-derived values or other application state may be stored.
 - App assets, translations, and fonts load locally with the application. No runtime API requests, external item images, or HTML rendering of imported notes. The CSP keeps `connect-src 'none'`; development HMR is disabled.
 - **Apply** updates memory; **Export vault** downloads plaintext JSON. Closing or refreshing loses unsaved work. **Close vault** drops the session's references and revokes download URLs; JavaScript cannot guarantee forensic erasure of browser-managed memory.
 - Privacy Mode is visual privacy, not encryption or protection against a compromised browser. Extensions, clipboard history, downloads, the OS, and other software are outside Vaultsort's control.
@@ -41,6 +42,15 @@ Keep real exports outside the checkout—especially outside `public/` and `dist/
 ### Hosted copies / GitHub Pages
 
 The static build can be hosted over HTTPS, including on GitHub Pages, but this repository does not configure a deployment workflow or advertise a hosted instance. Loading a hosted copy makes ordinary requests for application assets; its host may log those requests and your IP address.
+
+An explicitly marked demo build (`VITE_HOSTED_DEMO=true npm run build -- --base /`) shows a
+demo label and requires voluntary acknowledgment before choosing or reading a file. The
+warning explains local browser processing, no intentional vault upload, remotely delivered
+code's different trust model, and the recommendation to review/build locally for sensitive
+real vaults. Continue is not consent to discard drafts. Acknowledgment lasts for this tab
+session including reloads; duplicated/restored tabs may inherit it. If storage is unavailable,
+only the immediate explicit picker attempt is authorized; later attempts warn again.
+Use the production-build instructions below for ordinary, unmarked local use.
 
 You must trust the host, repository account, build dependencies, and delivered JavaScript. A malicious or changed build can read a selected plaintext vault and remove security controls; CSP is not proof that a hosted copy is trustworthy. For sensitive use, review/build the source and serve it locally. Never deploy vault files alongside the app.
 
@@ -140,7 +150,7 @@ npm test
 npm run build
 ```
 
-Tests cover preservation, folder operations, validation, session history, DOM privacy, branding, translation coverage, preference restoration, and all four current language/theme combinations. Automated UI tests use jsdom; browser/RTL visual checks are still needed for UI changes. No CI workflow or separate formatting command is currently configured.
+Tests cover preservation, folder operations, validation, session history, DOM privacy, branding, translation coverage, preference restoration, hosted import gates, workflow contracts and all four current language/theme combinations. Automated UI tests use jsdom; browser/RTL visual checks are still needed for UI changes. CI runs `npm ci`, lint, tests and the production build for pushes to main and pull requests targeting main, using Node 24 with read-only verification permissions. No separate formatting command is configured.
 
 Refinement acceptance evidence and remaining gates are recorded in
 [`specs/001-refine-vault-usability/implementation.md`](specs/001-refine-vault-usability/implementation.md).

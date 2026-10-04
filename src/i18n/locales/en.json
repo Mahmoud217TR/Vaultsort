@@ -1,4 +1,15 @@
 {
+  "hostedDemo": {
+    "label": "Hosted demo", "title": "Before choosing a vault",
+    "processing": "Processing occurs locally in your browser.",
+    "upload": "Vaultsort does not intentionally upload your vault.",
+    "trust": "Remotely delivered JavaScript has a different trust model from a reviewed local build. A changed or compromised host or build can change these protections.",
+    "recommend": "For sensitive real vaults, review and build the source and run it locally.",
+    "choice": "Continuing with this hosted demo is your voluntary choice, not permission to discard unsaved work.",
+    "continue": "Continue to file selection", "local": "Use locally instead",
+    "guidance": "Cancel this import. Follow the README's local build instructions on a trusted device; no account or backend is needed.",
+    "blocked": "File not read. Review the hosted warning and choose a fresh file after continuing."
+  },
   "app": {
     "name": "Vaultsort", "title": "Vaultsort — Local vault editor", "home": "Vaultsort home", "tagline": "LOCAL VAULT EDITOR",
     "local": "Local only", "device": "Nothing leaves this device", "help": "Help and keyboard shortcuts", "helpSymbol": "?",

@@ -14,6 +14,8 @@ Read `docs/design-system.md` before editing Vue templates or styles. It is the s
 
 Vault documents and undo history stay in memory. No backend, vault browser storage, telemetry, runtime external requests, vault logging, external item images, or HTML rendering of imported content. The sole storage exception is the explicitly requested `vaultsort.language` (`en`/`ar`) and `vaultsort.theme` (`light`/`dark`) preferences. Only `public/preferences.js` reads them and `src/preferences.ts` writes them; never persist vault content, filenames, drafts, search, privacy state, or history. Keep the blocking preference script in the head before styles to avoid theme flashes. Keep the CSP's `connect-src 'none'` intact. Mask secrets in the DOM in Privacy Mode without ever applying masks to the document. Preserve unknown JSON properties and source structure.
 
+The sole additional approved storage exception is a hosted-demo tab-session acknowledgment: only `src/hostedDemo.ts` may read/write `vaultsort.hostedDemoAcknowledged:<BASE_URL>` with exact value `'1'` in sessionStorage. Ordinary local builds must not access it. No vault-derived value or other application state may be stored; the existing localStorage preference boundary remains unchanged.
+
 Keep domain operations in `src/domain/vault.ts`, use the existing in-memory history, and test non-trivial logic. Prefer native browser features and existing dependencies over new abstractions.
 
 ## Verification

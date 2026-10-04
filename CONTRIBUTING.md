@@ -22,7 +22,7 @@ The dev server binds to localhost. HMR is intentionally disabled to avoid its ne
 - Discuss substantial changes in an issue first. Link the issue in your PR, describe behavior and tradeoffs, and include reproduction steps/test results. There is no required issue for a small fix or translation correction.
 - Add regression tests for non-trivial logic and security-sensitive changes. Update English strings, affected translations, and documentation together; record user-visible changes under `[Unreleased]` in `CHANGELOG.md`.
 - For UI work, include sanitized screenshots using synthetic data. Check English/LTR and Arabic/RTL in both light and dark themes, including narrow layouts and keyboard focus.
-- Complete applicable PR checklist items. Maintainer review is required; address feedback before merging. No CI, automatic merge, or release automation is currently configured—run the checks yourself.
+- Complete applicable PR checklist items. Maintainer review is required; address feedback before merging. CI verifies pushes to main and pull requests targeting main; also run the checks yourself. No automatic merge or release publication is configured.
 
 ## Testing, linting, and formatting
 
@@ -48,6 +48,7 @@ Vitest tests use jsdom, not a real browser. Manually check affected screens in a
 
 - Vault data, filenames, search, drafts, privacy state, and history stay in memory. No server upload, backend, telemetry, browser vault storage, or runtime external requests.
 - Only the validated language/theme preferences may be persisted: `public/preferences.js` reads them and `src/preferences.ts` writes them. Keep the blocking head bootstrap and CSP `connect-src 'none'` intact.
+- The sole additional approved exception is hosted-only tab-session acknowledgment: `src/hostedDemo.ts` alone may access `vaultsort.hostedDemoAcknowledged:<BASE_URL>` in sessionStorage, with exact value `'1'`. Local builds must not access it; no vault-derived values or other application state may be stored.
 - Never log vault contents or include them in errors, audit messages, tests, or screenshots. Use message keys for notices/history so locale changes translate existing messages without modifying data.
 - Never render imported HTML, load vault-provided images, or place secrets in the DOM in Privacy Mode. UI masks must never be saved into the document.
 - Protect original bytes and undo history. Fail invalid edits without data loss; close/reset paths must clear session references and revoke download URLs.
