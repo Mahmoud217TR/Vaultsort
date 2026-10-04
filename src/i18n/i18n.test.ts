@@ -53,12 +53,12 @@ describe('locale coverage', () => {
 
 describe('pre-paint preference restoration', () => {
   const boot = readFileSync('public/preferences.js', 'utf8')
-  function restore(saved: Record<string, string>, systemDark = false, blocked = false) {
+  function restore(saved: Record<string, string>, systemDark = false, blocked: boolean | string = false) {
     const root = { lang: '', dir: '', dataset: {} as Record<string, string> }
     const meta = { content: '' }
     runInNewContext(boot, {
       matchMedia: () => ({ matches: systemDark }),
-      localStorage: { getItem: (key: string) => { if (blocked) throw new Error('blocked'); return saved[key] ?? null } },
+      localStorage: { getItem: (key: string) => { if (blocked === true || blocked === key) throw new Error('blocked'); return saved[key] ?? null } },
       document: { documentElement: root, querySelector: () => meta },
     })
     return { root, meta }
@@ -86,6 +86,14 @@ describe('pre-paint preference restoration', () => {
     expect(() => { setLanguage('ar'); setTheme('dark') }).not.toThrow()
     expect(document.documentElement.dir).toBe('rtl')
     expect(theme.value).toBe('dark')
+  })
+  it('restores valid preferences independently when the other read fails', () => {
+    const saved = { 'vaultsort.language': 'ar', 'vaultsort.theme': 'dark' }
+    expect(restore(saved, false, 'vaultsort.language').root).toMatchObject({ lang: 'en', dataset: { theme: 'dark' } })
+    expect(restore(saved, false, 'vaultsort.theme').root).toMatchObject({ lang: 'ar', dataset: { theme: 'light' } })
+    expect(restore({ ...saved, 'vaultsort.language': 'invalid' }).root).toMatchObject({ lang: 'en', dataset: { theme: 'dark' } })
+    expect(restore({ ...saved, 'vaultsort.theme': 'invalid' }).root).toMatchObject({ lang: 'ar', dataset: { theme: 'light' } })
+    for (const language of ['en', 'ar']) for (const value of ['light', 'dark']) expect(restore({ 'vaultsort.language': language, 'vaultsort.theme': value }).root).toMatchObject({ lang: language, dir: language === 'ar' ? 'rtl' : 'ltr', dataset: { theme: value } })
   })
 })
 
@@ -165,7 +173,7 @@ describe('language and theme combinations', () => {
     expect(typeName(1)).toBe(i18n.global.t('common.login'))
     expect(scalar({})).toBe(i18n.global.t('common.structured'))
     expect(validateVault(source).every(issue => i18n.global.te(issue.message, 'ar'))).toBe(true)
-    await wrapper.get('.sidebar-footer button:nth-child(2)').trigger('click')
+    await wrapper.findAll('.sidebar-footer button').find(button => button.text() === i18n.global.t('nav.close'))!.trigger('click')
     expect(wrapper.find('.workspace').exists()).toBe(false)
     expect(localStorage.length).toBe(2)
     expect(localStorage.getItem('vaultsort.language')).toBe(language === 'ar' ? 'en' : 'ar')

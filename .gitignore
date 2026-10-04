@@ -1,5 +1,8 @@
 node_modules/
 dist/
+build/
+.idea/
+.vscode/
 coverage/
 *.tsbuildinfo
 .DS_Store
@@ -51,3 +54,18 @@ id_ed25519
 /vaultwarden*.json
 /original-*.json
 /vault*.json.*
+
+# Local AI / development tooling
+.opencode/skills/impeccable/
+.opencode/commands/impeccable.md
+.opencode/commands/speckit.*.md
+
+# Local Spec Kit installation/runtime files
+.specify/.gitignore
+.specify/init-options.json
+.specify/integration.json
+.specify/integrations/
+.specify/scripts/
+.specify/templates/
+.specify/workflows/
+.specify/memory/.constitution-template.json

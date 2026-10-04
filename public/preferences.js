@@ -4,10 +4,12 @@
   let theme = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   try {
     const savedLanguage = localStorage.getItem('vaultsort.language')
-    const savedTheme = localStorage.getItem('vaultsort.theme')
     if (savedLanguage === 'en' || savedLanguage === 'ar') language = savedLanguage
+  } catch { /* Language defaults independently when storage is disabled. */ }
+  try {
+    const savedTheme = localStorage.getItem('vaultsort.theme')
     if (savedTheme === 'light' || savedTheme === 'dark') theme = savedTheme
-  } catch { /* Storage may be disabled; defaults still work. */ }
+  } catch { /* Native theme defaults independently when storage is disabled. */ }
   document.documentElement.lang = language
   document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr'
   document.documentElement.dataset.theme = theme

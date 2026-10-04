@@ -42,9 +42,11 @@ describe('local branding and design system', () => {
   it('bundles licensed Inter and keeps light/dark, focus, and reduced-motion styles centralized', () => {
     const css = readFileSync('src/style.css', 'utf8')
     expect(css).toContain('url("./fonts/InterVariable.woff2")')
+    expect(css).toContain('@source not "./**/*.test.ts";')
     expect(readFileSync('src/fonts/InterVariable.woff2').subarray(0, 4).toString()).toBe('wOF2')
     expect(readFileSync('public/fonts/OFL.txt', 'utf8')).toContain('SIL OPEN FONT LICENSE Version 1.1')
     for (const rule of [':root[data-theme="dark"]', 'prefers-reduced-motion: reduce', ':focus-visible', '--bg-selected: #e0f2fe', '--brand: #0284c7', '--text-muted: #64748b']) expect(css).toContain(rule)
+    for (const selector of ['.file-tag', '.step-number']) expect(css.match(new RegExp(`\\${selector} \\{[^}]+\\}`))?.[0]).toContain('color: var(--text-secondary)')
     expect(readFileSync('AGENTS.md', 'utf8')).toContain('docs/design-system.md')
     expect(readFileSync('docs/design-system.md', 'utf8')).toContain('Vaultsort Design System')
   })
