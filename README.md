@@ -78,6 +78,17 @@ The build type-checks the app and writes static assets to `dist/`. Preview serve
 5. Review duplicate candidates and validation. Export the modified vault and verify the download before closing. Only applied edits are exported; no original file is overwritten.
 6. Follow your password manager's import guidance and check the result. Imports may create duplicates; Vaultsort cannot guarantee compatibility with every export/import version.
 
+**Filters**, **Sort**, and **Fields** disclose compact controls. Notes, Date created, and Last
+modified are independent, initially hidden, session-only columns. Full notes are inspected as
+literal text only with Privacy Mode off. Sorting changes the view, not export order. Numeric SSH
+type 5 is discoverable through navigation and filtering; its opaque data remains available through
+the existing Raw JSON editor, without a specialized SSH editor.
+
+Item warnings open the current source item and its field or safe context. Stale warnings are
+rejected; cancelled navigation retains drafts. **Download original copy** remains in the workspace
+sidebar. Repository and **Having an issue?** links open fixed GitHub destinations in new tabs;
+they never include vault data and do not contact GitHub until activated.
+
 There is no encrypted-export support, cloud sync, or automatic save. Full-document undo snapshots cost memory proportional to vault size; test large files cautiously.
 
 ## Contributing and checks
@@ -91,6 +102,10 @@ npm run build
 ```
 
 Tests cover preservation, folder operations, validation, session history, DOM privacy, branding, translation coverage, preference restoration, and all four current language/theme combinations. Automated UI tests use jsdom; browser/RTL visual checks are still needed for UI changes. No CI workflow or separate formatting command is currently configured.
+
+Refinement acceptance evidence and remaining gates are recorded in
+[`specs/001-refine-vault-usability/implementation.md`](specs/001-refine-vault-usability/implementation.md).
+This is not a cross-browser or representative-user acceptance claim.
 
 ## License
 

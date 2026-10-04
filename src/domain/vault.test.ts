@@ -13,6 +13,20 @@ const fixture = (): VaultExport => ({
 })
 
 describe('import and preservation', () => {
+  it('recognizes only numeric SSH while preserving opaque SSH data', () => {
+    const source = { items: [{ type: 5, name: 'SSH', sshKey: { privateKey: 'synthetic', future: [7] } }, { type: '5' }, { type: 9 }] } as unknown as VaultExport
+    expect(typeName(5)).toBe('SSH key')
+    expect(typeName('5')).toBe(typeName(9))
+    expect(validateVault(source).filter(issue => issue.message === 'validation.unsupported').map(issue => issue.itemIndex)).toEqual([1, 2])
+    expect(parseVault(serializeVault(source))).toEqual(source)
+  })
+  it('identifies validation fields and offending URI entries without copying values', () => {
+    const issues = validateVault({ items: [{ type: 1, folderId: 'missing', organizationId: 'org', login: { username: 42, password: [], totp: {}, uris: [{ uri: 'valid' }, { uri: 7 }] } }] })
+    for (const field of ['folderId', 'ownership', 'login.username', 'login.password', 'login.totp', 'login.uris']) expect(issues.some(issue => issue.field === field)).toBe(true)
+    expect(issues.find(issue => issue.message === 'validation.uris')).toMatchObject({ field: 'login.uris', entryIndex: 1, itemIndex: 0 })
+    expect(issues.every(issue => issue.folderIndex === undefined)).toBe(true)
+    expect(validateVault({ items: [{ type: 1, login: [] } as unknown as VaultItem] }).find(issue => issue.message === 'validation.login')).toMatchObject({ field: 'login', itemIndex: 0 })
+  })
   it('round-trips without rebuilding or adding properties', () => {
     const source = fixture()
     expect(JSON.parse(serializeVault(parseVault(JSON.stringify(source))))).toEqual(source)

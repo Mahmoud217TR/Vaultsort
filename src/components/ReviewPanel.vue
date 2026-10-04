@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { duplicateLabel, findDuplicates, items, text, validateVault, type DuplicateKind, type VaultExport } from '../domain/vault'
+import { duplicateLabel, findDuplicates, items, text, type DuplicateKind, type VaultExport, type ValidationBundle, type IssueRequest } from '../domain/vault'
 import Icon from './Icon.vue'
-const props = defineProps<{ document: VaultExport }>()
+import Tooltip from './Tooltip.vue'
+const props = defineProps<{ document: VaultExport; validation: ValidationBundle }>()
 const { t } = useI18n()
-const emit = defineEmits<{ select: [index: number] }>()
+const emit = defineEmits<{ select: [index: number]; inspectIssue: [request: IssueRequest] }>()
 const tab = ref<'duplicates' | 'validation'>('duplicates')
 const kind = ref<DuplicateKind>('credential')
 const duplicates = computed(() => findDuplicates(props.document))
 const groups = computed(() => duplicates.value.filter(group => group.kind === kind.value))
-const issues = computed(() => validateVault(props.document))
+const issues = computed(() => props.validation.issues)
 const errors = computed(() => issues.value.filter(i => i.severity === 'error').length)
 </script>
 
@@ -28,7 +29,7 @@ const errors = computed(() => issues.value.filter(i => i.severity === 'error').l
       <template v-else>
         <div class="validation-summary"><span :class="errors ? 'error-badge' : 'success-badge'"><Icon :name="errors ? 'warning' : 'check'" :size="16" />{{ t('common.errors', { count: errors }) }}</span><span class="warning-badge">{{ t('common.warnings', { count: issues.length - errors }) }}</span></div>
         <p class="hint">{{ t('review.validationHint') }}</p>
-        <div v-for="(issue, index) in issues" :key="index" :class="['issue-row', issue.severity]"><Icon :name="issue.severity === 'error' ? 'warning' : 'review'" :size="17" /><div><p>{{ t(issue.message) }}</p><button v-if="issue.itemIndex !== undefined" class="text-button" @click="emit('select', issue.itemIndex)">{{ t('common.inspectItem', { index: issue.itemIndex + 1 }) }}<Icon name="arrow" :size="13" /></button><span v-else-if="issue.folderIndex !== undefined" class="muted text-xs">{{ t('common.folderNumber', { index: issue.folderIndex + 1 }) }}</span></div></div>
+        <div v-for="(issue, index) in issues" :key="index" :class="['issue-row', issue.severity]"><Icon :name="issue.severity === 'error' ? 'warning' : 'review'" :size="17" /><div><p>{{ t(issue.message) }}</p><Tooltip v-if="issue.itemIndex !== undefined" :text="t('workspace.helpWarning')"><button class="text-button" @click="emit('inspectIssue', { revision: validation.revision, issue })">{{ t('common.inspectItem', { index: issue.itemIndex! + 1 }) }}<Icon name="arrow" :size="13" /></button></Tooltip><span v-else-if="issue.folderIndex !== undefined" class="muted text-xs">{{ t('common.folderNumber', { index: issue.folderIndex + 1 }) }}</span></div></div>
         <div v-if="!issues.length" class="empty-state"><span class="empty-icon"><Icon name="check" :size="28" /></span><h3>{{ t('review.valid') }}</h3><p>{{ t('review.ready') }}</p></div>
       </template>
     </div>

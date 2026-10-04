@@ -1,21 +1,42 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { errorMessage, translate, type Message } from '../i18n'
 import { clone, fields, folderName, folders, isObject, login, maskUsername, organizationName, parseRawItem, scalar, serializeVault, text, typeName, uris, type VaultExport, type VaultItem } from '../domain/vault'
 import Icon from './Icon.vue'
+import Tooltip from './Tooltip.vue'
+import type { Issue, IssueRequest } from '../domain/vault'
+import { itemType } from '../domain/vault'
 
-const props = defineProps<{ item: VaultItem; index: number; document: VaultExport; privacy: boolean }>()
+const props = defineProps<{ item: VaultItem; index: number; document: VaultExport; privacy: boolean; issueContext?: IssueRequest | null; issues?: Issue[]; revision?: number }>()
 const { t } = useI18n()
 const panel = ref<HTMLElement>()
 onMounted(() => { if (window.matchMedia?.('(max-width: 1000px)').matches) panel.value?.focus() })
-const emit = defineEmits<{ save: [item: VaultItem, description: Message]; close: []; dirty: [value: boolean]; notice: [message: string] }>()
+const emit = defineEmits<{ save: [item: VaultItem, description: Message]; close: []; dirty: [value: boolean]; notice: [message: string]; inspectIssue: [request: IssueRequest] }>()
 const draft = ref<VaultItem>(clone(props.item))
 const passwordVisible = ref(false)
 const totpVisible = ref(false)
 const tab = ref<'details' | 'raw'>('details')
 const raw = ref(JSON.stringify(props.item, null, 2))
 const error = ref<Message | null>(null)
+const contextHeading = ref<HTMLElement>()
+const metadata = ref<HTMLDetailsElement>()
+watch(() => props.issueContext, async request => {
+  if (!request || request.revision !== props.revision || request.issue.itemIndex !== props.index) return
+  await nextTick()
+  if (props.issueContext !== request || props.revision !== request.revision) return
+  let target: HTMLElement | null = null
+  if (tab.value === 'details') {
+    const field = request.issue.field
+    if (field === 'ownership') { if (metadata.value) metadata.value.open = true; target = metadata.value?.querySelector('summary') ?? null }
+    else if (field === 'folderId') target = panel.value?.querySelector('.editor-section select') ?? null
+    else if (field === 'login') target = panel.value?.querySelector('.malformed-login') ?? null
+    else if (field === 'login.uris') target = panel.value?.querySelectorAll<HTMLElement>('.uri-input input')[request.issue.entryIndex ?? 0] ?? panel.value?.querySelector('.add-uri') ?? null
+    else if (field) target = panel.value?.querySelector(`[data-issue-field="${field}"]`) ?? null
+  }
+  ;(target ?? contextHeading.value)?.focus({ preventScroll: true })
+  ;(target ?? contextHeading.value)?.scrollIntoView?.({ block: 'nearest' })
+}, { immediate: true })
 const rawDirty = computed(() => raw.value !== JSON.stringify(props.item, null, 2))
 const formDirty = computed(() => serializeVault(draft.value) !== serializeVault(props.item))
 const dirty = computed(() => tab.value === 'raw' ? rawDirty.value : formDirty.value)
@@ -88,10 +109,14 @@ function reset() {
 
 <template>
   <aside ref="panel" class="item-editor" tabindex="-1" :aria-label="t('editor.label')">
-    <header class="editor-header"><span class="eyebrow">{{ t('editor.title') }}</span><button class="icon-button" :aria-label="t('editor.close')" @click="emit('close')"><Icon name="close" :size="16" /></button></header>
-    <div class="editor-identity"><span class="item-avatar large"><Icon :name="item.type === 1 ? 'key' : item.type === 2 ? 'note' : item.type === 3 ? 'card' : 'user'" :size="24" /></span><div><h2><bdi>{{ text(item.name) || t('common.untitled') }}</bdi></h2><span class="muted text-xs">{{ typeName(item.type) }}<span class="dot-separator">{{ t('common.dot') }}</span><bdi>{{ folderName(document, item.folderId) }}</bdi></span></div></div>
+    <header class="editor-header"><span class="eyebrow">{{ t('editor.title') }}</span><Tooltip :text="t('workspace.helpClose')"><button class="icon-button" :aria-label="t('editor.close')" @click="emit('close')"><Icon name="close" :size="16" /></button></Tooltip></header>
+    <div class="editor-identity"><span class="item-avatar large"><Icon :name="itemType(item.type)?.icon ?? 'file'" :size="24" /></span><div><h2><bdi>{{ text(item.name) || t('common.untitled') }}</bdi></h2><span class="muted text-xs">{{ typeName(item.type) }}<span class="dot-separator">{{ t('common.dot') }}</span><bdi>{{ folderName(document, item.folderId) }}</bdi></span></div></div>
     <nav class="editor-tabs" :aria-label="t('editor.view')"><button :class="{ active: tab === 'details' }" :aria-pressed="tab === 'details'" @click="switchTab('details')">{{ t('editor.details') }}</button><button :class="{ active: tab === 'raw' }" :aria-pressed="tab === 'raw'" @click="switchTab('raw')"><Icon name="file" :size="14" />{{ t('editor.raw') }}</button></nav>
     <form class="editor-scroll" autocomplete="off" @submit.prevent="save">
+      <section v-if="issues?.length" class="issue-context">
+        <h3 ref="contextHeading" tabindex="-1">{{ t('workspace.itemIssueContext', { index: index + 1 }) }}</h3>
+        <div v-for="(issue, i) in issues" :key="i"><p>{{ t(issue.message) }}</p><button type="button" class="text-button" @click="emit('inspectIssue', { revision: revision!, issue })">{{ t('workspace.inspectField') }}</button></div>
+      </section>
       <div v-if="tab === 'raw'" class="raw-editor">
         <p class="hint">{{ t('editor.rawHint') }}</p>
         <div v-if="privacy" class="privacy-placeholder"><Icon name="eyeOff" /><p>{{ t('editor.rawPrivacy') }}</p></div>
@@ -105,26 +130,26 @@ function reset() {
         </section>
         <template v-if="draft.type === 1">
           <section class="editor-section"><h3>{{ t('editor.credentials') }}<Icon name="lock" :size="13" /></h3>
-            <p v-if="!isObject(draft.login)" class="inline-warning">{{ t('editor.malformedLogin') }}</p>
-            <label class="field-label">{{ t('editor.username') }}<div class="input-wrap"><input :value="privacy ? maskedUsername : text(login(draft).username)" dir="auto" :readonly="privacy" :placeholder="t(privacy ? 'editor.hiddenPlaceholder' : 'editor.usernamePlaceholder')" @input="setLogin('username', value($event))" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore /><Icon v-if="privacy" name="eyeOff" :size="15" /></div></label>
-            <label class="field-label">{{ t('editor.password') }}<div class="input-wrap"><input :value="privacy ? '••••••••' : text(login(draft).password)" dir="auto" :readonly="privacy" :type="passwordVisible && !privacy ? 'text' : 'password'" @input="setLogin('password', value($event))" autocomplete="new-password" spellcheck="false" data-lpignore="true" data-1p-ignore /><div class="input-actions"><button type="button" class="icon-button" :disabled="privacy" :aria-label="t(passwordVisible ? 'editor.hidePassword' : 'editor.revealPassword')" @click="passwordVisible = !passwordVisible"><Icon :name="passwordVisible ? 'eyeOff' : 'eye'" :size="16" /></button><button type="button" class="icon-button" :disabled="privacy" :aria-label="t('editor.copyPassword')" @click="copyPassword"><Icon name="copy" :size="15" /></button></div></div></label>
+            <p v-if="!isObject(draft.login)" class="inline-warning malformed-login" tabindex="-1">{{ t('editor.malformedLogin') }}</p>
+            <label class="field-label">{{ t('editor.username') }}<div class="input-wrap"><input data-issue-field="login.username" :value="privacy ? maskedUsername : text(login(draft).username)" dir="auto" :readonly="privacy" :placeholder="t(privacy ? 'editor.hiddenPlaceholder' : 'editor.usernamePlaceholder')" @input="setLogin('username', value($event))" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore /><Icon v-if="privacy" name="eyeOff" :size="15" /></div></label>
+            <label class="field-label">{{ t('editor.password') }}<div class="input-wrap"><input data-issue-field="login.password" :value="privacy ? '••••••••' : text(login(draft).password)" dir="auto" :readonly="privacy" :type="passwordVisible && !privacy ? 'text' : 'password'" @input="setLogin('password', value($event))" autocomplete="new-password" spellcheck="false" data-lpignore="true" data-1p-ignore /><div class="input-actions"><Tooltip :text="t('workspace.helpReveal')"><button type="button" class="icon-button" :disabled="privacy" :aria-label="t(passwordVisible ? 'editor.hidePassword' : 'editor.revealPassword')" @click="passwordVisible = !passwordVisible"><Icon :name="passwordVisible ? 'eyeOff' : 'eye'" :size="16" /></button></Tooltip><Tooltip :text="t('workspace.helpCopy')"><button type="button" class="icon-button" :disabled="privacy" :aria-label="t('editor.copyPassword')" @click="copyPassword"><Icon name="copy" :size="15" /></button></Tooltip></div></div></label>
             <p v-if="privacy" class="hint"><Icon name="eyeOff" :size="12" />{{ t('editor.privacyHint') }}</p>
           </section>
-          <section class="editor-section"><h3>{{ t('editor.uris') }}<button type="button" class="text-button" @click="setLogin('uris', [...uris(draft), { uri: '', match: null }])"><Icon name="plus" :size="13" />{{ t('common.add') }}</button></h3>
+          <section class="editor-section"><h3>{{ t('editor.uris') }}<button type="button" class="text-button add-uri" @click="setLogin('uris', [...uris(draft), { uri: '', match: null }])"><Icon name="plus" :size="13" />{{ t('common.add') }}</button></h3>
             <p v-if="!uris(draft).length" class="hint">{{ t('editor.noUris') }}</p>
             <div v-for="(entry, i) in uris(draft)" :key="i" class="uri-row">
-              <div class="uri-input"><Icon name="globe" :size="15" /><input :aria-label="t('editor.uri', { index: i + 1 })" :value="isObject(entry) ? text(entry.uri) : ''" dir="ltr" @input="setUri(i, 'uri', value($event))" :placeholder="t('editor.uriPlaceholder')" autocomplete="off" spellcheck="false" /><button type="button" class="icon-button" :aria-label="t('editor.deleteUri', { index: i + 1 })" @click="setLogin('uris', uris(draft).filter((_, index) => index !== i))"><Icon name="close" :size="14" /></button></div>
+              <div class="uri-input"><Icon name="globe" :size="15" /><input :aria-label="t('editor.uri', { index: i + 1 })" :value="isObject(entry) ? text(entry.uri) : ''" dir="ltr" @input="setUri(i, 'uri', value($event))" :placeholder="t('editor.uriPlaceholder')" autocomplete="off" spellcheck="false" /><Tooltip :text="t('workspace.helpDelete')"><button type="button" class="icon-button" :aria-label="t('editor.deleteUri', { index: i + 1 })" @click="setLogin('uris', uris(draft).filter((_, index) => index !== i))"><Icon name="close" :size="14" /></button></Tooltip></div>
               <label class="match-label">{{ t('editor.match') }}<select :value="isObject(entry) && entry.match != null ? scalar(entry.match) : ''" @change="setUri(i, 'match', value($event) === '' ? null : Number(value($event)))"><option value="">{{ t('editor.matchDefault') }}</option><option v-for="(key, index) in ['matchDomain', 'matchHost', 'matchStarts', 'matchExact', 'matchRegex', 'matchNever']" :key="key" :value="index">{{ t(`editor.${key}`) }}</option><option v-if="isObject(entry) && entry.match != null && ![0, 1, 2, 3, 4, 5].includes(entry.match as number)" :value="scalar(entry.match)" disabled>{{ t('editor.unknown') }}</option></select></label>
             </div>
           </section>
-          <section class="editor-section"><h3>{{ t('editor.twoFactor') }}</h3><label class="field-label">{{ t('editor.totp') }}<div class="input-wrap"><input :value="privacy ? '••••••••' : text(login(draft).totp)" dir="ltr" :readonly="privacy" :type="totpVisible && !privacy ? 'text' : 'password'" @input="setLogin('totp', value($event))" autocomplete="new-password" spellcheck="false" data-lpignore="true" data-1p-ignore /><button type="button" class="icon-button" :disabled="privacy" :aria-label="t(totpVisible ? 'editor.hideTotp' : 'editor.revealTotp')" @click="totpVisible = !totpVisible"><Icon :name="totpVisible ? 'eyeOff' : 'eye'" :size="16" /></button></div></label></section>
+          <section class="editor-section"><h3>{{ t('editor.twoFactor') }}</h3><label class="field-label">{{ t('editor.totp') }}<div class="input-wrap"><input data-issue-field="login.totp" :value="privacy ? '••••••••' : text(login(draft).totp)" dir="ltr" :readonly="privacy" :type="totpVisible && !privacy ? 'text' : 'password'" @input="setLogin('totp', value($event))" autocomplete="new-password" spellcheck="false" data-lpignore="true" data-1p-ignore /><Tooltip :text="t('workspace.helpReveal')"><button type="button" class="icon-button" :disabled="privacy" :aria-label="t(totpVisible ? 'editor.hideTotp' : 'editor.revealTotp')" @click="totpVisible = !totpVisible"><Icon :name="totpVisible ? 'eyeOff' : 'eye'" :size="16" /></button></Tooltip></div></label></section>
         </template>
         <section class="editor-section"><h3>{{ t('editor.notes') }}</h3><div v-if="privacy" class="privacy-note"><Icon name="eyeOff" :size="15" />{{ t('editor.notesHidden') }}</div><label v-else class="field-label"><span class="sr-only">{{ t('editor.notes') }}</span><textarea :value="text(draft.notes)" dir="auto" @input="draft.notes = value($event)" rows="4" :placeholder="t('editor.notesPlaceholder')" autocomplete="off" spellcheck="false" /></label></section>
         <section class="editor-section"><h3>{{ t('editor.custom') }}<button type="button" class="text-button" @click="draft.fields = [...fields(draft), { name: '', value: '', type: 0 }]"><Icon name="plus" :size="13" />{{ t('common.add') }}</button></h3>
           <p v-if="!fields(draft).length" class="hint">{{ t('editor.noCustom') }}</p>
           <div v-for="(field, i) in fields(draft)" :key="i" class="custom-field">
             <template v-if="isObject(field)">
-              <div class="custom-field-top"><input :aria-label="t('editor.fieldName', { index: i + 1 })" :value="text(field.name)" dir="auto" @input="setField(i, 'name', value($event))" :placeholder="t('editor.fieldPlaceholder')" autocomplete="off" /><button type="button" class="icon-button" :aria-label="t('editor.deleteField', { index: i + 1 })" @click="draft.fields = fields(draft).filter((_, index) => index !== i)"><Icon name="trash" :size="15" /></button></div>
+              <div class="custom-field-top"><input :aria-label="t('editor.fieldName', { index: i + 1 })" :value="text(field.name)" dir="auto" @input="setField(i, 'name', value($event))" :placeholder="t('editor.fieldPlaceholder')" autocomplete="off" /><Tooltip :text="t('workspace.helpDelete')"><button type="button" class="icon-button" :aria-label="t('editor.deleteField', { index: i + 1 })" @click="draft.fields = fields(draft).filter((_, index) => index !== i)"><Icon name="trash" :size="15" /></button></Tooltip></div>
               <select :aria-label="t('editor.fieldType', { index: i + 1 })" :value="field.type == null ? '0' : scalar(field.type)" @change="setField(i, 'type', Number(value($event)))"><option value="0">{{ t('editor.text') }}</option><option value="1">{{ t('editor.hidden') }}</option><option value="2">{{ t('editor.boolean') }}</option><option v-if="field.type != null && ![0, 1, 2].includes(field.type as number)" :value="scalar(field.type)" disabled>{{ t('editor.unsupported') }}</option></select>
               <div v-if="privacy && field.type === 2" class="privacy-note"><Icon name="eyeOff" :size="15" />{{ t('editor.valueHidden') }}</div>
               <label v-else-if="field.type === 2" class="checkbox-label"><input type="checkbox" :checked="field.value === 'true' || field.value === true" @change="setField(i, 'value', checked($event) ? 'true' : 'false')" />{{ t('editor.value') }}</label>
@@ -133,10 +158,10 @@ function reset() {
           </div>
         </section>
         <section v-if="item.type !== 1 && item.type !== 2" class="editor-section"><p class="hint">{{ t('editor.preserved', { type: typeName(item.type) }) }}</p></section>
-        <details class="editor-section metadata"><summary>{{ t('editor.metadata') }}<Icon name="chevron" :size="14" /></summary><dl><template v-for="key in ['id', 'organizationId', 'revisionDate', 'creationDate', 'deletedDate', 'type']" :key="key"><dt>{{ t(`editor.${key}`) }}</dt><dd><bdi>{{ scalar(item[key]) }}</bdi></dd></template></dl><i18n-t v-if="item.organizationId" keypath="editor.ownership" tag="p" class="hint" scope="global"><template #name><bdi>{{ organizationName(document, item.organizationId) }}</bdi></template></i18n-t></details>
+        <details ref="metadata" class="editor-section metadata"><summary>{{ t('editor.metadata') }}<Icon name="chevron" :size="14" /></summary><dl><template v-for="key in ['id', 'organizationId', 'revisionDate', 'creationDate', 'deletedDate', 'type']" :key="key"><dt>{{ t(`editor.${key}`) }}</dt><dd><bdi>{{ scalar(item[key]) }}</bdi></dd></template></dl><i18n-t v-if="item.organizationId" keypath="editor.ownership" tag="p" class="hint" scope="global"><template #name><bdi>{{ organizationName(document, item.organizationId) }}</bdi></template></i18n-t></details>
       </template>
       <p v-if="error" role="alert" class="error-message">{{ translate(error) }}</p>
     </form>
-    <footer class="editor-footer"><span :class="dirty ? 'unsaved' : 'text-xs muted'">{{ t(dirty ? 'editor.dirty' : 'editor.clean') }}</span><div class="flex gap-2"><button class="button small" :disabled="!dirty" @click="reset">{{ t('common.reset') }}</button><button class="button primary small" :disabled="!dirty || (tab === 'raw' && privacy)" @click="save"><Icon name="check" :size="14" />{{ t('common.apply') }}</button></div></footer>
+    <footer class="editor-footer"><span :class="dirty ? 'unsaved' : 'text-xs muted'">{{ t(dirty ? 'editor.dirty' : 'editor.clean') }}</span><div class="flex gap-2"><Tooltip :text="t('workspace.helpReset')"><button class="button small" :disabled="!dirty" @click="reset">{{ t('common.reset') }}</button></Tooltip><Tooltip :text="t('workspace.helpApply')"><button class="button primary small" :disabled="!dirty || (tab === 'raw' && privacy)" @click="save"><Icon name="check" :size="14" />{{ t('common.apply') }}</button></Tooltip></div></footer>
   </aside>
 </template>

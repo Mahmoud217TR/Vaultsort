@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ItemEditor from './ItemEditor.vue'
 import App from '../App.vue'
+import NoteInspector from './NoteInspector.vue'
 import { type VaultExport, type VaultItem } from '../domain/vault'
 import { translate, type Message } from '../i18n'
 
@@ -16,7 +17,154 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
+async function importSource(source: VaultExport) {
+  const encoded = new TextEncoder().encode(JSON.stringify(source))
+  const bytes = new ArrayBuffer(encoded.length)
+  new Uint8Array(bytes).set(encoded)
+  class Reader {
+    result = bytes
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    readAsArrayBuffer() { queueMicrotask(() => this.onload?.()) }
+    abort() {}
+  }
+  vi.stubGlobal('FileReader', Reader)
+  wrapper ??= mount(App, { attachTo: document.body })
+  const input = wrapper.get('input[type=file]')
+  Object.defineProperty(input.element, 'files', { configurable: true, value: [new File([''], 'synthetic.json')] })
+  await input.trigger('change'); await flushPromises()
+  await wrapper.get('dialog .primary').trigger('click')
+}
+
 describe('editor security', () => {
+  it.each(['hide', 'replace', 'delete', 'undo', 'redo', 'close'] as const)('clears all note types on %s without retaining stale detail', async action => {
+    const notes = ['Synthetic login secret', '<script>literal()</script>\n<img src="https://literal.test">', '🗝'.repeat(150) + '\nالعربية literal SSH', 'Unknown synthetic note']
+    const source: VaultExport = { encrypted: false, opaque: { unchanged: true }, items: [1, 2, 5, 9].map((type, index) => ({ type, name: `Synthetic ${index}`, notes: notes[index] })), folders: [] }
+    source.items!.push({ type: 2, name: 'Blank', notes: '   ' }, { type: 2, name: 'Malformed', notes: { opaque: true } } as unknown as VaultItem)
+    await importSource(source)
+    await wrapper!.get('[aria-controls="vault-fields"]').trigger('click')
+    await wrapper!.get('[data-field="notes"]').setValue(true)
+    for (const note of notes) expect(wrapper!.html()).not.toContain(note)
+    expect(wrapper!.find('.note-preview').exists()).toBe(false)
+    await wrapper!.get('.privacy-toggle').trigger('click')
+    expect(wrapper!.findAll('.note-preview')).toHaveLength(4)
+    const previews = wrapper!.findAll('.note-preview bdi').map(cell => cell.text())
+    expect(previews.every(value => Array.from(value).length <= 100)).toBe(true)
+    expect(previews[2]).toBe('🗝'.repeat(99) + '…')
+    expect(wrapper!.findAll('.notes-cell').slice(4).map(cell => cell.text())).toEqual(['—', '—'])
+    if (action === 'undo' || action === 'redo') {
+      await wrapper!.get('.star-button').trigger('click')
+      if (action === 'redo') await wrapper!.get('[aria-label="Undo"]').trigger('click')
+    }
+    await wrapper!.findAll('.note-preview')[2]!.trigger('click')
+    expect(wrapper!.get('.note-text').text()).toBe(notes[2])
+    if (action === 'hide') await wrapper!.get('[data-field="notes"]').setValue(false)
+    if (action === 'replace') await importSource({ encrypted: false, items: [{ type: 2, name: 'Replacement', notes: 'New note' }] })
+    if (action === 'delete') {
+      await wrapper!.findAll('tbody input[type=checkbox]')[2]!.setValue(true)
+      await wrapper!.get('[aria-label="Delete selected items"]').trigger('click')
+    }
+    if (action === 'undo' || action === 'redo') await wrapper!.get(`[aria-label="${action === 'undo' ? 'Undo' : 'Redo'}"]`).trigger('click')
+    if (action === 'close') await wrapper!.findAll('.sidebar-footer button').find(button => button.text() === 'Close vault')!.trigger('click')
+    await flushPromises()
+    expect(wrapper!.findComponent(NoteInspector).exists()).toBe(false)
+    expect(wrapper!.find('.note-text').exists()).toBe(false)
+    if (!['replace', 'delete', 'close'].includes(action)) {
+      await wrapper!.get('.name-cell button').trigger('click')
+      expect(wrapper!.getComponent(ItemEditor).props('document').items).toEqual(action === 'redo' ? source.items!.map((item, index) => index === 0 ? { ...item, favorite: true } : item) : source.items)
+    }
+  })
+  it('selects the native note popover when supported and returns focus after dismissal', async () => {
+    const show = vi.fn(), hide = vi.fn()
+    const originalShow = HTMLElement.prototype.showPopover, originalHide = HTMLElement.prototype.hidePopover
+    HTMLElement.prototype.showPopover = show
+    HTMLElement.prototype.hidePopover = hide
+    const trigger = document.createElement('button'); document.body.append(trigger)
+    try {
+      wrapper = mount(NoteInspector, { props: { text: 'Synthetic native note', trigger }, attachTo: document.body })
+      expect(show).toHaveBeenCalledOnce()
+      expect(wrapper.get('[popover="auto"]').attributes('role')).toBe('dialog')
+      expect(document.activeElement).toBe(wrapper.get('button').element)
+      await wrapper.get('button').trigger('click')
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      wrapper.unmount(); wrapper = undefined; await flushPromises()
+      expect(hide).toHaveBeenCalledOnce()
+      expect(document.activeElement).toBe(trigger)
+    } finally { HTMLElement.prototype.showPopover = originalShow; HTMLElement.prototype.hidePopover = originalHide; trigger.remove() }
+  })
+  it.each([false, true])('retains plaintext guidance and fixed links in export with blocked=%s', async blocked => {
+    await importSource({ encrypted: false, items: [{ type: 2, name: 'Synthetic', folderId: blocked ? 'missing' : null }] })
+    for (const link of wrapper!.findAll('a[target="_blank"]')) {
+      expect(link.attributes('href')).toMatch(/^https:\/\/github\.com\/Mahmoud217TR\/Vaultsort(?:\/issues)?$/)
+      expect(link.attributes('rel')).toBe('noopener noreferrer')
+      expect(link.attributes('aria-label')).toContain('new tab')
+    }
+    expect(wrapper!.find('.plaintext-banner').exists()).toBe(false)
+    expect(wrapper!.get('.original-copy').isVisible()).toBe(true)
+    await wrapper!.get('.toolbar-actions .primary').trigger('click')
+    expect(wrapper!.get('dialog').text()).toContain('Your vault contains plaintext passwords.')
+    expect(wrapper!.get('dialog .primary').attributes('disabled') !== undefined).toBe(blocked)
+  })
+  it('provides fixed user-activated project links with distinct home branding and no external data', () => {
+    wrapper = mount(App)
+    expect(wrapper.find('.brand .brand-label').exists()).toBe(false)
+    const links = wrapper.findAll('a[target="_blank"]')
+    expect(links.length).toBeGreaterThanOrEqual(3)
+    for (const link of links) {
+      expect(['https://github.com/Mahmoud217TR/Vaultsort', 'https://github.com/Mahmoud217TR/Vaultsort/issues']).toContain(link.attributes('href'))
+      expect(link.attributes('rel')).toBe('noopener noreferrer')
+      expect(link.attributes('aria-label')).toContain('new tab')
+    }
+    expect(wrapper.find('.hosted-trust').text()).toContain('hosted')
+    const app = readFileSync(resolve('src/App.vue'), 'utf8')
+    expect(app).not.toContain('class="plaintext-banner"')
+    expect(app).toContain('class="original-copy"')
+    expect(app).not.toMatch(/prefetch|preconnect|dns-prefetch/)
+  })
+  it('contains the accessible hidden Notes label inside the editor scroll region', () => {
+    const css = readFileSync(resolve('src/style.css'), 'utf8')
+    expect(css).toMatch(/\.editor-scroll\s*\{[^}]*position:\s*relative/)
+    wrapper = mount(ItemEditor, { props: { item, index: 0, document: doc, privacy: false } })
+    expect(wrapper.get('.editor-scroll label .sr-only').text()).toBe('Notes')
+  })
+  it('gates literal full-note inspection and clears exposed detail when masked or filtered away', async () => {
+    const encoded = new TextEncoder().encode(JSON.stringify(doc))
+    const bytes = new ArrayBuffer(encoded.length)
+    new Uint8Array(bytes).set(encoded)
+    class Reader {
+      result = bytes
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      readAsArrayBuffer() { queueMicrotask(() => this.onload?.()) }
+      abort() {}
+    }
+    vi.stubGlobal('FileReader', Reader)
+    wrapper = mount(App, { attachTo: document.body })
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [new File([''], 'synthetic.json')] })
+    await input.trigger('change'); await flushPromises()
+    await wrapper.get('dialog .primary').trigger('click')
+    await wrapper.get('[aria-controls="vault-fields"]').trigger('click')
+    await wrapper.get('[data-field="notes"]').setValue(true)
+    expect(wrapper.html()).not.toContain('evil.test')
+    expect(wrapper.find('.note-preview').exists()).toBe(false)
+    await wrapper.get('.privacy-toggle').trigger('click')
+    await wrapper.get('.note-preview').trigger('click')
+    expect(wrapper.get('.note-text').text()).toBe(item.notes)
+    expect(wrapper.find('.note-text img').exists()).toBe(false)
+    expect(wrapper.find('.note-text script').exists()).toBe(false)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.find('.note-text').exists()).toBe(false)
+    await wrapper.get('.note-preview').trigger('click')
+    await wrapper.get('.privacy-toggle').trigger('click')
+    expect(wrapper.find('.note-text').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('evil.test')
+    await wrapper.get('.privacy-toggle').trigger('click')
+    await wrapper.get('.note-preview').trigger('click')
+    await wrapper.get('.search-wrap input').setValue('does not match')
+    expect(wrapper.find('.note-text').exists()).toBe(false)
+  })
   it('does not evaluate or coerce malformed structured metadata', () => {
     const malformed = { ...item, folderId: { toString: 'not callable' }, creationDate: { toString: 'not callable' }, fields: [{ name: 'Unknown', type: { toString: null } }], login: { ...item.login, uris: [{ uri: 'https://example.test', match: { toString: 'no evaluation' } }] } } as unknown as VaultItem
     const document = { ...doc, folders: [{ id: { toString: null }, name: 'Malformed' }] } as unknown as VaultExport
@@ -186,9 +334,19 @@ describe('application workflow', () => {
     expect(wrapper.find('.changes-button').text()).toBe('1 changes')
     await wrapper.find('.toolbar-actions .primary').trigger('click')
     expect(wrapper.find('dialog').text()).toContain('0 errors')
+    expect(wrapper.findAll('dialog [role="tooltip"]').length).toBeGreaterThanOrEqual(2)
+    for (const tip of wrapper.findAll('dialog [role="tooltip"]')) {
+      expect(tip.text()).not.toContain('old-secret')
+      expect(tip.text()).not.toContain('user@example.test')
+      expect(tip.text()).not.toContain('evil.test')
+    }
     await wrapper.find('dialog .primary').trigger('click')
     expect(createUrl).toHaveBeenCalledTimes(2)
-    const closeButton = wrapper.findAll('.sidebar-footer button')[1]!
+    await wrapper.get('.original-copy').trigger('click')
+    const originalReader = new NativeFileReader()
+    const originalAfterEdits = await new Promise<ArrayBuffer>(resolve => { originalReader.onload = () => resolve(originalReader.result as ArrayBuffer); originalReader.readAsArrayBuffer(createUrl.mock.calls[2]![0] as unknown as Blob) })
+    expect(new Uint8Array(originalAfterEdits)).toEqual(new Uint8Array(bytes))
+    const closeButton = wrapper.findAll('.sidebar-footer button').find(button => button.text() === 'Close vault')!
     await closeButton.trigger('click')
     expect(wrapper.find('.workspace').exists()).toBe(false)
     expect(wrapper.find('.import-card').exists()).toBe(true)

@@ -6,7 +6,9 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 
 ### Added
 
-- Optional creation/last-modified columns with localized date/time formatting and a session-only Show dates toggle.
+- Independent session-only Notes, Date created, and Last modified columns, initially hidden, with localized dates and privacy-gated literal full-note inspection.
+- Compact labelled Filters/Sort/Fields disclosures, contextual revision-guarded item-warning navigation, and numeric SSH type 5 discovery without a new SSH editor.
+- Localized action help and explicit new-tab GitHub/Issues links, with original-copy access retained in the workspace sidebar.
 - View-only item sorting by name, creation date, and last-modified date, with ascending/descending controls in English and Arabic.
 - Browser-only import, original backups, item/raw JSON editing, search/filtering, bulk actions, validation/export, duplicate review, and in-memory undo/redo.
 - Folder/subfolder creation, editing, branch moves, safe deletion, merging, and virtual grouping paths using native slash-separated names.
@@ -18,11 +20,17 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 
 - Refined interface density, shared control states, table/sidebar readability, dialog scrolling, and narrow-screen LTR/RTL layouts without changing the Azure identity or vault workflows.
 - Expanded local/sensitive-file ignore rules without ignoring general JSON files.
+- Excluded test fixtures from production Tailwind class scanning so regression tests do not change shipped utility CSS.
 - Clarified hosted-build trust, plaintext-export handling, preference-only persistence, and current pre-release status in project documentation.
 
 ### Fixed
 
-- No fixes recorded for this initial changelog yet.
+- Contained the editor's hidden Notes label within its scroll region, fixing the reproduced desktop page overflow.
+- Restored language and theme independently when one preference storage read fails.
+- Kept row click targets stable when dismissing inline controls and restored list focus when a compact editor opener disappears.
+- Parsed imported sort dates once per row instead of repeatedly inside comparisons.
+- Resolved the active item-type category once per filtering pass instead of repeating descriptor lookup/string conversion for every item.
+- Raised import file-badge and step-number text contrast using the existing secondary-text token.
 
 ### Security
 

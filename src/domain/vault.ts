@@ -26,12 +26,13 @@ export const folders = (doc: VaultExport) => doc.folders ?? []
 export type ItemSort = 'original' | 'name' | 'creationDate' | 'revisionDate'
 export type SortDirection = 'asc' | 'desc'
 export function sortItemRows(rows: { item: VaultItem; index: number }[], by: ItemSort, direction: SortDirection, locale: string) {
+  if (by === 'original') return [...rows].sort((a, b) => a.index - b.index)
   const collator = new Intl.Collator(locale, { sensitivity: 'base', numeric: true })
   const sign = direction === 'asc' ? 1 : -1
+  const timestamps = by === 'name' ? null : new Map(rows.map(row => [row.index, Date.parse(text(row.item[by]))]))
   return [...rows].sort((a, b) => {
-    if (by === 'original') return a.index - b.index
     if (by === 'name') return sign * collator.compare(text(a.item.name).trim(), text(b.item.name).trim()) || a.index - b.index
-    const left = Date.parse(text(a.item[by])), right = Date.parse(text(b.item[by]))
+    const left = timestamps!.get(a.index)!, right = timestamps!.get(b.index)!
     // Missing/invalid dates stay last in either direction; equal keys keep source order.
     if (!Number.isFinite(left)) return Number.isFinite(right) ? 1 : a.index - b.index
     if (!Number.isFinite(right)) return -1
@@ -41,7 +42,15 @@ export function sortItemRows(rows: { item: VaultItem; index: number }[], by: Ite
 export const login = (item: VaultItem): JsonObject => isObject(item.login) ? item.login : {}
 export const uris = (item: VaultItem): unknown[] => Array.isArray(login(item).uris) ? login(item).uris as unknown[] : []
 export const fields = (item: VaultItem): unknown[] => Array.isArray(item.fields) ? item.fields : []
-export const typeName = (value: unknown) => t(typeof value === 'number' ? ['common.other', 'common.login', 'common.note', 'common.card', 'common.identity'][value] ?? 'common.other' : 'common.other')
+export const knownTypes = [
+  { type: 1, label: 'common.login', category: 'nav.logins', icon: 'key' },
+  { type: 2, label: 'common.note', category: 'nav.notes', icon: 'note' },
+  { type: 3, label: 'common.card', category: 'nav.cards', icon: 'card' },
+  { type: 4, label: 'common.identity', category: 'nav.identities', icon: 'user' },
+  { type: 5, label: 'common.ssh', category: 'nav.ssh', icon: 'key' },
+] as const
+export const itemType = (value: unknown) => knownTypes.find(entry => entry.type === value)
+export const typeName = (value: unknown) => t(itemType(value)?.label ?? 'common.other')
 export const maskUsername = (value: string) => value ? `${value.length > 2 ? value.slice(0, 2) : ''}••••••` : ''
 export const scalar = (value: unknown) => value == null ? t('common.dash') : ['string', 'number', 'boolean'].includes(typeof value) ? String(value) : t('common.structured')
 export const folderName = (doc: VaultExport, id: unknown) => !id ? t('common.unassigned') : text(folders(doc).find(f => f.id === id)?.name) || t('common.missingFolder')
@@ -232,10 +241,13 @@ export function findDuplicates(doc: VaultExport): DuplicateGroup[] {
   return [...groups.values()].filter(group => group.indexes.length > 1)
 }
 
-export interface Issue { severity: 'error' | 'warning'; message: string; itemIndex?: number; folderIndex?: number }
+export type IssueField = 'folderId' | 'login' | 'login.username' | 'login.password' | 'login.totp' | 'login.uris' | 'ownership'
+export interface Issue { severity: 'error' | 'warning'; message: string; itemIndex?: number; folderIndex?: number; field?: IssueField; entryIndex?: number }
+export interface IssueRequest { revision: number; issue: Issue }
+export interface ValidationBundle { revision: number; issues: Issue[] }
 export function validateVault(doc: VaultExport): Issue[] {
   const result: Issue[] = []
-  const add = (severity: Issue['severity'], message: string, itemIndex?: number, folderIndex?: number) => result.push({ severity, message, itemIndex, folderIndex })
+  const add = (severity: Issue['severity'], message: string, itemIndex?: number, folderIndex?: number, field?: IssueField, entryIndex?: number) => result.push({ severity, message, itemIndex, folderIndex, field, entryIndex })
   const counts = new Map<string, number>()
   const references = new Map<string, number>()
   for (const f of folders(doc)) if (text(f.id)) counts.set(f.id!, (counts.get(f.id!) ?? 0) + 1)
@@ -247,17 +259,20 @@ export function validateVault(doc: VaultExport): Issue[] {
     if (!references.has(folder.id!)) add('warning', 'validation.emptyFolder', undefined, index)
   })
   items(doc).forEach((item, index) => {
-    if (item.folderId && !counts.has(text(item.folderId))) add('error', 'validation.missingFolder', index)
-    if (item.organizationId || (Array.isArray(item.collectionIds) && item.collectionIds.length)) add('warning', 'validation.organization', index)
-    if (![1, 2, 3, 4].includes(item.type!)) add('warning', 'validation.unsupported', index)
+    if (item.folderId && !counts.has(text(item.folderId))) add('error', 'validation.missingFolder', index, undefined, 'folderId')
+    if (item.organizationId || (Array.isArray(item.collectionIds) && item.collectionIds.length)) add('warning', 'validation.organization', index, undefined, 'ownership')
+    if (!itemType(item.type)) add('warning', 'validation.unsupported', index)
     if (item.type !== 1) return
     const l = login(item)
-    if (!isObject(item.login)) add('error', 'validation.login', index)
-    for (const key of ['username', 'password', 'totp']) if (l[key] !== undefined && l[key] !== null && typeof l[key] !== 'string') add('error', `validation.${key}`, index)
-    if (l.uris !== undefined && l.uris !== null && (!Array.isArray(l.uris) || l.uris.some(u => !isObject(u) || (u.uri !== null && typeof u.uri !== 'string')))) add('error', 'validation.uris', index)
-    if (!text(l.username)) add('warning', 'validation.noUsername', index)
-    if (!text(l.password)) add('warning', 'validation.noPassword', index)
-    if (!uris(item).some(u => isObject(u) && text(u.uri))) add('warning', 'validation.noUri', index)
+    if (!isObject(item.login)) add('error', 'validation.login', index, undefined, 'login')
+    for (const key of ['username', 'password', 'totp'] as const) if (l[key] !== undefined && l[key] !== null && typeof l[key] !== 'string') add('error', `validation.${key}`, index, undefined, `login.${key}`)
+    if (l.uris !== undefined && l.uris !== null) {
+      const invalid = Array.isArray(l.uris) ? l.uris.findIndex(u => !isObject(u) || (u.uri !== null && typeof u.uri !== 'string')) : -1
+      if (!Array.isArray(l.uris) || invalid >= 0) add('error', 'validation.uris', index, undefined, 'login.uris', invalid >= 0 ? invalid : undefined)
+    }
+    if (!text(l.username)) add('warning', 'validation.noUsername', index, undefined, 'login.username')
+    if (!text(l.password)) add('warning', 'validation.noPassword', index, undefined, 'login.password')
+    if (!uris(item).some(u => isObject(u) && text(u.uri))) add('warning', 'validation.noUri', index, undefined, 'login.uris')
   })
   for (const group of findDuplicates(doc)) if (group.kind === 'exact') for (const index of group.indexes) add('warning', 'validation.duplicate', index)
   if (Object.keys(doc).some(key => !['encrypted', 'folders', 'items', 'organizations', 'collections'].includes(key))) add('warning', 'validation.unknown')
