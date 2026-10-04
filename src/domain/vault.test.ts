@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clone, createFolder, deleteFolder, deleteItem, findDuplicates, maskUsername, matchesSearch, mergeFolders, moveItem, moveItems, parseRawItem, parseVault, renameFolder, scalar, serializeVault, typeName, updateItem, validateVault, type VaultExport } from './vault'
+import { clone, createFolder, deleteFolder, deleteItem, findDuplicates, maskUsername, matchesSearch, mergeFolders, moveItem, moveItems, parseRawItem, parseVault, renameFolder, scalar, serializeVault, sortItemRows, typeName, updateItem, validateVault, type VaultExport, type VaultItem } from './vault'
 import { useVault } from '../composables/useVault'
 
 const fixture = (): VaultExport => ({
@@ -142,6 +142,36 @@ describe('items and review', () => {
     const issues = validateVault(doc)
     for (const key of ['duplicateFolderId', 'missingFolder', 'username', 'uris', 'noPassword', 'noUri', 'emptyFolder', 'organization', 'unsupported', 'unknown', 'duplicate']) expect(issues.some(i => i.message === `validation.${key}`)).toBe(true)
     expect(JSON.stringify(issues)).not.toContain('secret-password')
+  })
+})
+
+describe('view-only item sorting', () => {
+  it('sorts names naturally in both directions, keeps ties stable, and preserves rows/documents', () => {
+    const source: VaultItem[] = [{ name: 'Item 10', id: 'duplicate' }, { name: 'item 2', id: 'duplicate' }, { name: 'ITEM 2' }, { name: 'Alpha' }]
+    const before = JSON.stringify(source)
+    const rows = source.map((item, index) => ({ item, index }))
+    const indexes = (by: 'original' | 'name', direction: 'asc' | 'desc') => sortItemRows(rows, by, direction, 'en').map(row => row.index)
+    expect(indexes('name', 'asc')).toEqual([3, 1, 2, 0])
+    expect(indexes('name', 'desc')).toEqual([0, 1, 2, 3])
+    expect(indexes('original', 'desc')).toEqual([0, 1, 2, 3])
+    expect(rows.map(row => row.index)).toEqual([0, 1, 2, 3])
+    expect(JSON.stringify(source)).toBe(before)
+    expect(sortItemRows(rows, 'name', 'asc', 'en')[0]!.item).toBe(source[3])
+    const arabic = ['جيم', 'باء', 'ألف'].map((name, index) => ({ item: { name }, index }))
+    expect(sortItemRows(arabic, 'name', 'asc', 'ar').map(row => row.index)).toEqual([2, 1, 0])
+    expect(sortItemRows([{ item: { name: 42 } as unknown as VaultItem, index: 0 }, { item: {}, index: 1 }], 'name', 'asc', 'en').map(row => row.index)).toEqual([0, 1])
+  })
+
+  it('compares timestamps rather than strings and keeps absent/malformed dates last in both directions', () => {
+    for (const by of ['creationDate', 'revisionDate'] as const) {
+      const values = ['2026-02-01T00:00:00Z', '2026-01-01T00:00:00Z', '2025-12-31T19:00:00-05:00', undefined, null, 'invalid', '', 0, { toString: 'invalid' }]
+      const rows = values.map((date, index) => ({ item: { [by]: date }, index }))
+      const before = JSON.stringify(rows)
+      expect(sortItemRows(rows, by, 'asc', 'en').map(row => row.index)).toEqual([1, 2, 0, 3, 4, 5, 6, 7, 8])
+      expect(sortItemRows(rows, by, 'desc', 'en').map(row => row.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
+      expect(JSON.stringify(rows)).toBe(before)
+      expect(sortItemRows([], by, 'asc', 'en')).toEqual([])
+    }
   })
 })
 

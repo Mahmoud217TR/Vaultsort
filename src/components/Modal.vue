@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from './Icon.vue'
 defineProps<{ title: string; wide?: boolean }>()
@@ -7,6 +7,7 @@ const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement>()
 const { t } = useI18n()
 onMounted(() => dialog.value?.showModal())
+onBeforeUnmount(() => dialog.value?.close?.())
 </script>
 
 <template>

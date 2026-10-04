@@ -9,10 +9,15 @@ import ItemEditor from './components/ItemEditor.vue'
 import Modal from './components/Modal.vue'
 import ReviewPanel from './components/ReviewPanel.vue'
 import { useVault } from './composables/useVault'
-import { createFolder, deleteFolder, deleteItems, domain, duplicateLabel, findDuplicates, folderLeaf, folderName, folderParent, folders, folderTree, isObject, items, login, maskUsername, matchesSearch, mergeFolders, moveFolder, moveItems, organizationName, renameFolder, replaceItem, serializeVault, text, typeName, uris, validateVault, withinFolder, type VaultExport, type VaultItem } from './domain/vault'
+import { createFolder, deleteFolder, deleteItems, domain, duplicateLabel, findDuplicates, folderLeaf, folderName, folderParent, folders, folderTree, isObject, items, login, maskUsername, matchesSearch, mergeFolders, moveFolder, moveItems, organizationName, renameFolder, replaceItem, serializeVault, sortItemRows, text, typeName, uris, validateVault, withinFolder, type ItemSort, type SortDirection, type VaultExport, type VaultItem } from './domain/vault'
 
 const { t, locale } = useI18n()
 const number = (value: number) => new Intl.NumberFormat(locale.value).format(value)
+const dateFormatter = computed(() => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }))
+function formatDate(value: unknown) {
+  const timestamp = Date.parse(text(value))
+  return Number.isFinite(timestamp) ? dateFormatter.value.format(timestamp) : t('common.dash')
+}
 const { originalBytes, originalName, workingDocument: doc, changes, dirty, canUndo, canRedo, load, commit, undo, redo, markExported, close } = useVault()
 const fileInput = ref<HTMLInputElement>()
 const searchInput = ref<HTMLInputElement>()
@@ -27,6 +32,9 @@ const typeFilter = ref('all')
 const organizationFilter = ref('all')
 const qualityFilter = ref('all')
 const showFilters = ref(false)
+const sortBy = ref<ItemSort>('original')
+const sortDirection = ref<SortDirection>('asc')
+const showDates = ref(false)
 const selected = ref<number[]>([])
 const selectedSet = computed(() => new Set(selected.value))
 const current = ref<number | null>(null)
@@ -47,6 +55,7 @@ let reader: FileReader | null = null
 let readVersion = 0
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 const objectUrls = new Set<string>()
+let editorTrigger: HTMLElement | null = null
 
 const nav = [
   { id: 'all', label: 'nav.all', icon: 'grid' }, { id: 'favorites', label: 'nav.favorites', icon: 'star' },
@@ -95,11 +104,13 @@ const filtered = computed(() => {
     return matchesSearch(doc.value!, item, query.value)
   })
 })
-const visible = computed(() => filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize))
+const sorted = computed(() => sortItemRows(filtered.value, sortBy.value, sortDirection.value, locale.value))
+const visible = computed(() => sorted.value.slice((page.value - 1) * pageSize, page.value * pageSize))
 const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
 const allSelected = computed(() => filtered.value.length > 0 && filtered.value.every(row => selectedSet.value.has(row.index)))
 const activeFilters = computed(() => [typeFilter.value, organizationFilter.value, qualityFilter.value].filter(v => v !== 'all').length)
 watch([view, query, folderFilter, typeFilter, organizationFilter, qualityFilter], () => { page.value = 1; selected.value = [] })
+watch([sortBy, sortDirection, locale], () => { page.value = 1 })
 watch(pages, value => { if (page.value > value) page.value = value })
 const summary = computed(() => [
   { value: allItems.value.length, label: 'import.totalItems' }, { value: allFolders.value.length, label: 'import.folders' },
@@ -120,9 +131,14 @@ function discardDraft(): boolean {
 function selectItem(index: number) {
   if (index === current.value) return
   if (!discardDraft()) return
+  editorTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
   current.value = index
 }
-function closeEditor() { if (discardDraft()) current.value = null }
+function closeEditor() {
+  if (!discardDraft()) return
+  current.value = null
+  nextTick(() => editorTrigger?.focus())
+}
 function changeView(id: string, folder = 'all') {
   view.value = id
   folderFilter.value = folder
@@ -135,6 +151,7 @@ function togglePrivacy() { if (discardDraft()) privacy.value = !privacy.value }
 function unsavedConfirm() { return !(dirty.value || draftDirty.value || folderDraftDirty.value) || window.confirm(t('confirm.unsaved')) }
 function resetUI() {
   current.value = null
+  editorTrigger = null
   selected.value = []
   draftDirty.value = false
   query.value = ''
@@ -147,6 +164,9 @@ function resetUI() {
   includeSubfolders.value = returnToFolders.value = false
   notice.value = importError.value = null
   showFilters.value = false
+  sortBy.value = 'original'
+  sortDirection.value = 'asc'
+  showDates.value = false
   page.value = 1
   editorVersion.value++
 }
@@ -319,7 +339,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell" :class="{ 'vault-open': doc }">
-    <input ref="fileInput" type="file" accept=".json,application/json" class="sr-only" :aria-label="t('import.selectFile')" @change="importFile" />
+    <input ref="fileInput" type="file" accept=".json,application/json" class="sr-only" tabindex="-1" :aria-label="t('import.selectFile')" @change="importFile" />
     <header class="app-header">
       <a class="brand" href="#" :aria-label="t('app.home')" @click.prevent="doc ? changeView('all') : undefined"><img class="brand-mark" :src="vaultsortLogo" width="32" height="38" alt="" /><bdi>{{ t('app.name') }}</bdi><span class="brand-label">{{ t('app.tagline') }}</span></a>
       <div class="header-actions">
@@ -330,7 +350,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main v-if="!doc" class="import-page">
+    <main v-if="!doc" class="import-page" :aria-busy="importing">
       <section class="import-hero"><div class="release-label"><span class="status-dot" />{{ t('import.private') }}<span class="release-divider" />{{ t('import.browser') }}</div><h1>{{ t('import.title') }}<br /><span>{{ t('import.subtitle') }}</span></h1><p class="hero-description">{{ t('import.description') }}</p><div class="hero-features"><span><Icon name="folder" :size="16" />{{ t('import.organize') }}</span><span><Icon name="review" :size="16" />{{ t('import.duplicates') }}</span><span><Icon name="undo" :size="16" />{{ t('import.undo') }}</span></div></section>
       <section class="import-card" aria-labelledby="import-title"><div class="import-card-top"><span class="upload-icon"><Icon name="upload" :size="28" /></span><span class="file-tag" dir="ltr">{{ t('common.json') }}</span></div><h2 id="import-title">{{ t('import.start') }}</h2><p>{{ t('import.open') }}</p><button class="button primary import-button" :disabled="importing" @click="chooseFile"><Icon name="plus" :size="18" />{{ t(importing ? 'import.reading' : 'import.select') }}<Icon name="arrow" :size="18" /></button><p class="file-hint">{{ t('import.original') }}</p><div class="import-warning"><Icon name="lock" :size="18" /><p>{{ t('import.plaintext') }}</p></div><p v-if="importError" role="alert" class="error-message">{{ translate(importError) }}</p></section>
       <section class="how-it-works"><div class="how-heading"><span class="eyebrow">{{ t('import.steps') }}</span><span class="muted text-xs">{{ t('import.noSetup') }}</span></div><div class="steps"><article v-for="step in 3" :key="step"><span class="step-number">{{ number(step) }}</span><div><h3>{{ t(`import.step${step}`) }}</h3><p>{{ t(`import.step${step}Text`) }}</p></div></article></div></section>
@@ -355,35 +375,45 @@ onBeforeUnmount(() => {
         </div><footer class="sidebar-footer"><button @click="chooseFile"><Icon name="upload" :size="16" />{{ t('nav.open') }}</button><button @click="closeVault"><Icon name="logout" :size="16" />{{ t('nav.close') }}</button><div><span class="status-dot" />{{ t('nav.memory') }}</div></footer></aside>
         <ReviewPanel v-if="view === 'review'" :document="doc" @select="selectItem" />
         <section v-else class="items-panel" :aria-label="t('workspace.items')"><div class="panel-heading"><div><span class="eyebrow">{{ t('workspace.eyebrow') }}</span><h1><bdi>{{ heading }}</bdi><span class="heading-count">{{ number(filtered.length) }}</span></h1><p class="muted">{{ t('workspace.description') }}</p></div><span class="heading-icon"><Icon :name="folderFilter === 'all' ? nav.find(n => n.id === view)?.icon || 'grid' : 'folder'" :size="24" /></span></div>
-          <div class="search-toolbar"><label class="search-wrap"><Icon name="search" :size="18" /><input ref="searchInput" v-model="query" :aria-label="t('workspace.search')" :placeholder="t('workspace.searchPlaceholder')" autocomplete="off" spellcheck="false" /><kbd>{{ t('help.searchKey') }}</kbd><button v-if="query" class="icon-button" :aria-label="t('workspace.clearSearch')" @click="query = ''"><Icon name="close" :size="14" /></button></label><button class="button filter-button" :class="{ 'filter-active': showFilters || activeFilters }" :aria-label="t('workspace.filters')" :aria-expanded="showFilters" @click="showFilters = !showFilters"><Icon name="filter" :size="16" />{{ t('workspace.filters') }}<span v-if="activeFilters" class="count-pill">{{ number(activeFilters) }}</span></button></div>
-          <div v-if="showFilters" class="filters">
+          <div class="list-controls">
+          <div class="search-toolbar"><label class="search-wrap"><Icon name="search" :size="18" /><input ref="searchInput" v-model="query" :aria-label="t('workspace.search')" :placeholder="t('workspace.searchPlaceholder')" autocomplete="off" spellcheck="false" /><kbd>{{ t('help.searchKey') }}</kbd><button v-if="query" class="icon-button" :aria-label="t('workspace.clearSearch')" @click="query = ''"><Icon name="close" :size="14" /></button></label><button class="button filter-button" :class="{ 'filter-active': showFilters || activeFilters }" :aria-label="t('workspace.filters')" :aria-expanded="showFilters" aria-controls="vault-filters" @click="showFilters = !showFilters"><Icon name="filter" :size="16" />{{ t('workspace.filters') }}<span v-if="activeFilters" class="count-pill">{{ number(activeFilters) }}</span></button></div>
+          <div class="sort-toolbar">
+            <label>{{ t('workspace.sortBy') }}<select v-model="sortBy" :aria-label="t('workspace.sortBy')"><option value="original">{{ t('workspace.originalOrder') }}</option><option value="name">{{ t('workspace.alphabetical') }}</option><option value="creationDate">{{ t('workspace.created') }}</option><option value="revisionDate">{{ t('workspace.modified') }}</option></select></label>
+            <label>{{ t('workspace.sortDirection') }}<select v-model="sortDirection" :aria-label="t('workspace.sortDirection')" :disabled="sortBy === 'original'"><option value="asc">{{ t('workspace.ascending') }}</option><option value="desc">{{ t('workspace.descending') }}</option></select></label>
+            <label class="checkbox-label"><input v-model="showDates" type="checkbox" :aria-label="t('workspace.showDates')" />{{ t('workspace.showDates') }}</label>
+          </div>
+          <div v-if="showFilters" id="vault-filters" class="filters">
             <label>{{ t('workspace.folder') }}<select v-model="folderFilter"><option value="all">{{ t('workspace.allFolders') }}</option><option value="__unassigned">{{ t('common.unassigned') }}</option><option v-for="(folder, i) in allFolders" :key="i" :value="folder.id" :disabled="!folder.id">{{ folder.name }}</option></select></label>
             <label>{{ t('workspace.type') }}<select v-model="typeFilter"><option value="all">{{ t('workspace.allTypes') }}</option><option v-for="type in 4" :key="type" :value="String(type)">{{ typeName(type) }}</option><option value="other">{{ t('workspace.unsupported') }}</option></select></label>
             <label>{{ t('workspace.organization') }}<select v-model="organizationFilter"><option value="all">{{ t('workspace.allOwnership') }}</option><option value="__personal">{{ t('common.personal') }}</option><option v-for="id in organizations" :key="id" :value="id">{{ organizationName(doc, id) }}</option></select></label>
             <label>{{ t('workspace.inspect') }}<select v-model="qualityFilter"><option value="all">{{ t('workspace.allItems') }}</option><option value="favorites">{{ t('nav.favorites') }}</option><option value="no-username">{{ t('workspace.noUsername') }}</option><option value="no-uri">{{ t('workspace.noUri') }}</option><option value="warnings">{{ t('workspace.withIssues') }}</option><option v-for="(label, kind) in duplicateLabel" :key="kind" :value="kind">{{ t('workspace.duplicate', { rule: t(label) }) }}</option></select></label>
             <button class="text-button" @click="typeFilter = organizationFilter = qualityFilter = folderFilter = 'all'">{{ t('workspace.clearFilters') }}</button>
           </div>
+          </div>
           <div v-if="selected.length" class="bulk-toolbar"><strong>{{ t('workspace.selected', { count: number(selected.length) }) }}</strong><select :aria-label="t('workspace.moveSelected')" value="__choose" @change="bulkMove"><option value="__choose" disabled>{{ t('workspace.moveTo') }}</option><option value="">{{ t('common.unassigned') }}</option><option v-for="(folder, i) in allFolders" :key="i" :value="folder.id" :disabled="!folder.id">{{ folder.name }}</option></select><button class="icon-button" :aria-label="t('workspace.favoriteSelected')" @click="bulkFavorite(true)"><Icon name="star" :size="16" /></button><button class="icon-button" :aria-label="t('workspace.removeFavoriteSelected')" @click="bulkFavorite(false)"><Icon name="star" :size="16" /><span class="mini-minus">{{ t('workspace.minus') }}</span></button><button class="icon-button danger" :aria-label="t('workspace.deleteSelected')" @click="removeItems([...selected])"><Icon name="trash" :size="16" /></button><button class="icon-button" :aria-label="t('workspace.clearSelection')" @click="selected = []"><Icon name="close" :size="15" /></button></div>
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" role="region" :aria-label="t('workspace.items')">
             <table class="item-table">
               <thead><tr>
-                <th class="select-col"><input type="checkbox" :aria-label="t('workspace.selectAll')" :checked="allSelected" :indeterminate="selected.length > 0 && !allSelected" @change="toggleAll" /></th>
-                <th class="star-col"><span class="sr-only">{{ t('workspace.favorite') }}</span></th>
-                <th>{{ t('workspace.nameColumn') }}</th><th>{{ t('workspace.usernameColumn') }}</th><th>{{ t('workspace.typeColumn') }}</th><th>{{ t('workspace.folderColumn') }}</th>
-                <th v-if="!privacy">{{ t('workspace.uriColumn') }}</th><th v-if="!privacy">{{ t('workspace.organizationColumn') }}</th>
-                <th class="warning-col"><span class="sr-only">{{ t('workspace.warningsColumn') }}</span></th>
+                <th scope="col" class="select-col"><input type="checkbox" :aria-label="t('workspace.selectAll')" :checked="allSelected" :indeterminate="selected.length > 0 && !allSelected" @change="toggleAll" /></th>
+                <th scope="col" class="star-col"><span class="sr-only">{{ t('workspace.favorite') }}</span></th>
+                <th scope="col">{{ t('workspace.nameColumn') }}</th><th scope="col">{{ t('workspace.usernameColumn') }}</th><th scope="col">{{ t('workspace.typeColumn') }}</th><th scope="col">{{ t('workspace.folderColumn') }}</th>
+                <th v-if="showDates" scope="col">{{ t('workspace.created') }}</th><th v-if="showDates" scope="col">{{ t('workspace.modified') }}</th>
+                <th v-if="!privacy" scope="col">{{ t('workspace.uriColumn') }}</th><th v-if="!privacy" scope="col">{{ t('workspace.organizationColumn') }}</th>
+                <th scope="col" class="warning-col"><span class="sr-only">{{ t('workspace.warningsColumn') }}</span></th>
               </tr></thead>
               <tbody>
                 <tr v-for="{ item, index } in visible" :key="index" :class="{ 'row-active': current === index, 'row-checked': selectedSet.has(index) }" @click="selectItem(index)">
                   <td @click.stop><input type="checkbox" :aria-label="t('workspace.selectItem', { index: index + 1 })" :checked="selectedSet.has(index)" @change="toggleSelected(index)" /></td>
                   <td @click.stop><button :class="['star-button', { starred: item.favorite === true }]" :aria-label="t(item.favorite ? 'workspace.unfavoriteItem' : 'workspace.favoriteItem', { index: index + 1 })" @click="run({ key: 'audit.favorite', params: { index: index + 1 } }, document => { items(document)[index]!.favorite = !item.favorite })"><Icon name="star" :size="15" /></button></td>
-                  <td class="name-cell"><button :aria-current="current === index ? 'true' : undefined" @click.stop="selectItem(index)">
+                  <td class="name-cell"><button :title="text(item.name) || t('common.untitled')" :aria-current="current === index ? 'true' : undefined" @click.stop="selectItem(index)">
                     <span :class="['item-avatar', `type-${typeof item.type === 'number' ? item.type : 0}`]"><Icon :name="item.type === 1 ? 'key' : item.type === 2 ? 'note' : item.type === 3 ? 'card' : 'user'" :size="17" /></span>
                     <span><bdi>{{ text(item.name) || t('common.untitled') }}</bdi></span><Icon v-if="item.organizationId" name="lock" :size="11" />
                   </button></td>
                   <td class="username-cell"><bdi>{{ username(item) }}</bdi></td>
                   <td><span class="type-badge">{{ typeName(item.type) }}</span></td>
                   <td class="folder-cell"><span><Icon name="folder" :size="12" /><bdi>{{ folderName(doc, item.folderId) }}</bdi></span></td>
+                  <td v-if="showDates" class="date-cell"><bdi>{{ formatDate(item.creationDate) }}</bdi></td>
+                  <td v-if="showDates" class="date-cell"><bdi>{{ formatDate(item.revisionDate) }}</bdi></td>
                   <td v-if="!privacy" class="uri-cell" :title="firstUri(item)"><bdi dir="ltr">{{ domain(firstUri(item)) || firstUri(item) || t('common.dash') }}</bdi></td>
                   <td v-if="!privacy" class="organization-cell"><bdi>{{ organizationName(doc, item.organizationId) }}</bdi></td>
                   <td><button v-if="warningItems.has(index)" class="warning-indicator" :aria-label="t('workspace.itemIssues', { index: index + 1 })" :title="t('workspace.issuesTitle')" @click.stop="changeView('review'); selectItem(index)"><Icon name="warning" :size="15" /></button></td>

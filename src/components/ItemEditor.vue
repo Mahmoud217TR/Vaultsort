@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { errorMessage, translate, type Message } from '../i18n'
 import { clone, fields, folderName, folders, isObject, login, maskUsername, organizationName, parseRawItem, scalar, serializeVault, text, typeName, uris, type VaultExport, type VaultItem } from '../domain/vault'
@@ -7,6 +7,8 @@ import Icon from './Icon.vue'
 
 const props = defineProps<{ item: VaultItem; index: number; document: VaultExport; privacy: boolean }>()
 const { t } = useI18n()
+const panel = ref<HTMLElement>()
+onMounted(() => { if (window.matchMedia?.('(max-width: 1000px)').matches) panel.value?.focus() })
 const emit = defineEmits<{ save: [item: VaultItem, description: Message]; close: []; dirty: [value: boolean]; notice: [message: string] }>()
 const draft = ref<VaultItem>(clone(props.item))
 const passwordVisible = ref(false)
@@ -85,7 +87,7 @@ function reset() {
 </script>
 
 <template>
-  <aside class="item-editor" :aria-label="t('editor.label')">
+  <aside ref="panel" class="item-editor" tabindex="-1" :aria-label="t('editor.label')">
     <header class="editor-header"><span class="eyebrow">{{ t('editor.title') }}</span><button class="icon-button" :aria-label="t('editor.close')" @click="emit('close')"><Icon name="close" :size="16" /></button></header>
     <div class="editor-identity"><span class="item-avatar large"><Icon :name="item.type === 1 ? 'key' : item.type === 2 ? 'note' : item.type === 3 ? 'card' : 'user'" :size="24" /></span><div><h2><bdi>{{ text(item.name) || t('common.untitled') }}</bdi></h2><span class="muted text-xs">{{ typeName(item.type) }}<span class="dot-separator">{{ t('common.dot') }}</span><bdi>{{ folderName(document, item.folderId) }}</bdi></span></div></div>
     <nav class="editor-tabs" :aria-label="t('editor.view')"><button :class="{ active: tab === 'details' }" :aria-pressed="tab === 'details'" @click="switchTab('details')">{{ t('editor.details') }}</button><button :class="{ active: tab === 'raw' }" :aria-pressed="tab === 'raw'" @click="switchTab('raw')"><Icon name="file" :size="14" />{{ t('editor.raw') }}</button></nav>
@@ -135,6 +137,6 @@ function reset() {
       </template>
       <p v-if="error" role="alert" class="error-message">{{ translate(error) }}</p>
     </form>
-    <footer class="editor-footer"><span class="text-xs muted">{{ t(dirty ? 'editor.dirty' : 'editor.clean') }}</span><div class="flex gap-2"><button class="button small" :disabled="!dirty" @click="reset">{{ t('common.reset') }}</button><button class="button primary small" :disabled="!dirty || (tab === 'raw' && privacy)" @click="save"><Icon name="check" :size="14" />{{ t('common.apply') }}</button></div></footer>
+    <footer class="editor-footer"><span :class="dirty ? 'unsaved' : 'text-xs muted'">{{ t(dirty ? 'editor.dirty' : 'editor.clean') }}</span><div class="flex gap-2"><button class="button small" :disabled="!dirty" @click="reset">{{ t('common.reset') }}</button><button class="button primary small" :disabled="!dirty || (tab === 'raw' && privacy)" @click="save"><Icon name="check" :size="14" />{{ t('common.apply') }}</button></div></footer>
   </aside>
 </template>

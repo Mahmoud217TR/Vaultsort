@@ -16,6 +16,8 @@ _Screenshots coming soon: import screen, folder management, and English/Arabic w
 
 - Import unencrypted JSON and download a byte-for-byte original copy, including whitespace and UTF-8 BOM.
 - Search/filter items, edit login details or raw JSON, and apply bulk folder/favorite/delete actions.
+- Sort items alphabetically, by creation date, or by last-modified date in ascending/descending order. Sorting is view-only; export order is unchanged. Date sorting uses imported `creationDate`/`revisionDate`; missing or invalid dates stay last. Sort choices stay in memory and reset with the vault.
+- Toggle **Show dates** to display creation/last-modified columns, formatted in the selected language and your browser's local time zone. Missing/invalid dates show a dash; date visibility resets with the vault and is not persisted.
 - Create, rename, move, merge, and safely delete folders and subfolders. Slash-separated folder names retain the native export structure; folder deletion reassigns items rather than deleting credentials.
 - Inspect possible duplicates and validation results. Nothing is merged automatically; structural errors block modified export, while warnings are advisory.
 - Undo/redo up to 30 in-memory snapshots, a secret-free action history, and unsaved-work warnings.

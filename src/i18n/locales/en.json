@@ -26,9 +26,11 @@
   },
   "nav": { "all": "All items", "favorites": "Favorites", "unassigned": "Unassigned", "logins": "Logins", "notes": "Secure notes", "cards": "Cards", "identities": "Identities", "vault": "VAULT", "folders": "FOLDERS", "navigation": "Vault navigation", "review": "Review vault", "open": "Open another vault", "close": "Close vault", "memory": "Stored in memory only" },
   "workspace": {
+    "showDates": "Show dates",
     "privacy": "Privacy Mode", "undo": "Undo", "redo": "Redo", "undoTitle": "Undo (Ctrl/Cmd + Z)", "redoTitle": "Redo (Ctrl/Cmd + Shift + Z)", "changes": "{count} changes", "export": "Export vault", "original": "Download original copy",
     "unsaved": "Unsaved changes", "memory": "In-memory workspace", "items": "Vault items", "eyebrow": "YOUR WORKSPACE", "description": "A place for everything. Everything in its place.",
     "search": "Search vault", "searchPlaceholder": "Search your vault…", "clearSearch": "Clear search", "filters": "Filters", "folder": "Folder", "type": "Type", "organization": "Organization", "inspect": "Inspect",
+    "sortBy": "Sort by", "originalOrder": "Original order", "alphabetical": "Alphabetically", "created": "Date created", "modified": "Last modified", "sortDirection": "Sort direction", "ascending": "Ascending (ASC)", "descending": "Descending (DESC)",
     "allFolders": "All folders", "allTypes": "All types", "allOwnership": "All ownership", "unsupported": "Unsupported", "allItems": "All items", "noUsername": "Without username", "noUri": "Without URI", "withIssues": "With warnings / errors", "duplicate": "Duplicate: {rule}", "clearFilters": "Clear filters",
     "selected": "{count} selected", "moveSelected": "Move selected items to folder", "moveTo": "Move to folder…", "favoriteSelected": "Mark selected as favorite", "removeFavoriteSelected": "Remove selected favorites", "deleteSelected": "Delete selected items", "clearSelection": "Clear selection", "minus": "−",
     "selectAll": "Select all filtered items", "favorite": "Favorite", "selectItem": "Select item {index}", "favoriteItem": "Favorite item {index}", "unfavoriteItem": "Remove favorite from item {index}",
