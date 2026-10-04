@@ -23,6 +23,21 @@ export const text = (value: unknown): string => typeof value === 'string' ? valu
 export const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 export const items = (doc: VaultExport) => doc.items ?? []
 export const folders = (doc: VaultExport) => doc.folders ?? []
+export type ItemSort = 'original' | 'name' | 'creationDate' | 'revisionDate'
+export type SortDirection = 'asc' | 'desc'
+export function sortItemRows(rows: { item: VaultItem; index: number }[], by: ItemSort, direction: SortDirection, locale: string) {
+  const collator = new Intl.Collator(locale, { sensitivity: 'base', numeric: true })
+  const sign = direction === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    if (by === 'original') return a.index - b.index
+    if (by === 'name') return sign * collator.compare(text(a.item.name).trim(), text(b.item.name).trim()) || a.index - b.index
+    const left = Date.parse(text(a.item[by])), right = Date.parse(text(b.item[by]))
+    // Missing/invalid dates stay last in either direction; equal keys keep source order.
+    if (!Number.isFinite(left)) return Number.isFinite(right) ? 1 : a.index - b.index
+    if (!Number.isFinite(right)) return -1
+    return sign * (left - right) || a.index - b.index
+  })
+}
 export const login = (item: VaultItem): JsonObject => isObject(item.login) ? item.login : {}
 export const uris = (item: VaultItem): unknown[] => Array.isArray(login(item).uris) ? login(item).uris as unknown[] : []
 export const fields = (item: VaultItem): unknown[] => Array.isArray(item.fields) ? item.fields : []

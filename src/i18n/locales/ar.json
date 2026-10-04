@@ -26,9 +26,11 @@
   },
   "nav": { "all": "كل العناصر", "favorites": "المفضلة", "unassigned": "غير مصنف", "logins": "بيانات الدخول", "notes": "الملاحظات الآمنة", "cards": "البطاقات", "identities": "الهويات", "vault": "الخزنة", "folders": "المجلدات", "navigation": "التنقل في الخزنة", "review": "مراجعة الخزنة", "open": "فتح خزنة أخرى", "close": "إغلاق الخزنة", "memory": "محفوظ في الذاكرة فقط" },
   "workspace": {
+    "showDates": "إظهار التواريخ",
     "privacy": "وضع الخصوصية", "undo": "تراجع", "redo": "إعادة", "undoTitle": "تراجع (Ctrl/Cmd + Z)", "redoTitle": "إعادة (Ctrl/Cmd + Shift + Z)", "changes": "عدد التغييرات: {count}", "export": "تصدير الخزنة", "original": "تنزيل نسخة الأصل",
     "unsaved": "تغييرات غير محفوظة", "memory": "مساحة عمل في الذاكرة", "items": "عناصر الخزنة", "eyebrow": "مساحة عملك", "description": "مكان لكل شيء. وكل شيء في مكانه.",
     "search": "البحث في الخزنة", "searchPlaceholder": "ابحث في خزنتك…", "clearSearch": "مسح البحث", "filters": "عوامل التصفية", "folder": "المجلد", "type": "النوع", "organization": "المؤسسة", "inspect": "الفحص",
+    "sortBy": "ترتيب حسب", "originalOrder": "الترتيب الأصلي", "alphabetical": "الترتيب الأبجدي", "created": "تاريخ الإنشاء", "modified": "آخر تعديل", "sortDirection": "اتجاه الترتيب", "ascending": "تصاعدي (ASC)", "descending": "تنازلي (DESC)",
     "allFolders": "كل المجلدات", "allTypes": "كل الأنواع", "allOwnership": "كل جهات الملكية", "unsupported": "غير مدعوم", "allItems": "كل العناصر", "noUsername": "بلا اسم مستخدم", "noUri": "بلا عنوان URI", "withIssues": "بها تحذيرات أو أخطاء", "duplicate": "تكرار: {rule}", "clearFilters": "مسح عوامل التصفية",
     "selected": "العناصر المحددة: {count}", "moveSelected": "نقل العناصر المحددة إلى مجلد", "moveTo": "نقل إلى مجلد…", "favoriteSelected": "إضافة العناصر المحددة إلى المفضلة", "removeFavoriteSelected": "إزالة العناصر المحددة من المفضلة", "deleteSelected": "حذف العناصر المحددة", "clearSelection": "إلغاء التحديد", "minus": "−",
     "selectAll": "تحديد كل العناصر المصفاة", "favorite": "المفضلة", "selectItem": "تحديد العنصر {index}", "favoriteItem": "إضافة العنصر {index} إلى المفضلة", "unfavoriteItem": "إزالة العنصر {index} من المفضلة",

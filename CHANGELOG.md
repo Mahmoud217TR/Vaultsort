@@ -6,6 +6,8 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 
 ### Added
 
+- Optional creation/last-modified columns with localized date/time formatting and a session-only Show dates toggle.
+- View-only item sorting by name, creation date, and last-modified date, with ascending/descending controls in English and Arabic.
 - Browser-only import, original backups, item/raw JSON editing, search/filtering, bulk actions, validation/export, duplicate review, and in-memory undo/redo.
 - Folder/subfolder creation, editing, branch moves, safe deletion, merging, and virtual grouping paths using native slash-separated names.
 - English (canonical/default) and Arabic (RTL) localization, plus persisted language and light/dark preferences.
@@ -14,6 +16,7 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 
 ### Changed
 
+- Refined interface density, shared control states, table/sidebar readability, dialog scrolling, and narrow-screen LTR/RTL layouts without changing the Azure identity or vault workflows.
 - Expanded local/sensitive-file ignore rules without ignoring general JSON files.
 - Clarified hosted-build trust, plaintext-export handling, preference-only persistence, and current pre-release status in project documentation.
 
