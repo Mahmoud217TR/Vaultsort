@@ -32,6 +32,7 @@ _Screenshots coming soon: import screen, folder management, and English/Arabic w
 
 - Original bytes, the working document, drafts, and history stay in browser memory. Vaultsort has no backend, account, telemetry, service worker, or vault persistence.
 - Only `vaultsort.language` and `vaultsort.theme` use LocalStorage. Vault contents, filenames, search terms, and history are not stored there.
+- The sole additional approved storage exception is hosted-only tab-session acknowledgment: only `src/hostedDemo.ts` may access `vaultsort.hostedDemoAcknowledged:<BASE_URL>` in sessionStorage, with exact value `'1'`. Ordinary local builds must not access it. No vault-derived values or other application state may be stored.
 - App assets, translations, and fonts load locally with the application. No runtime API requests, external item images, or HTML rendering of imported notes. The CSP keeps `connect-src 'none'`; development HMR is disabled.
 - **Apply** updates memory; **Export vault** downloads plaintext JSON. Closing or refreshing loses unsaved work. **Close vault** drops the session's references and revokes download URLs; JavaScript cannot guarantee forensic erasure of browser-managed memory.
 - Privacy Mode is visual privacy, not encryption or protection against a compromised browser. Extensions, clipboard history, downloads, the OS, and other software are outside Vaultsort's control.
@@ -40,9 +41,52 @@ Keep real exports outside the checkout—especially outside `public/` and `dist/
 
 ### Hosted copies / GitHub Pages
 
-The static build can be hosted over HTTPS, including on GitHub Pages, but this repository does not configure a deployment workflow or advertise a hosted instance. Loading a hosted copy makes ordinary requests for application assets; its host may log those requests and your IP address.
+The repository configures an **optional demo** deployment to GitHub Pages, disabled by default.
+No live hosted instance is claimed here. Loading a hosted copy makes ordinary requests for
+application assets; its host may log those requests and your IP address.
+
+An explicitly marked demo build (`VITE_HOSTED_DEMO=true npm run build -- --base /`) shows a
+demo label and requires voluntary acknowledgment before choosing or reading a file. The
+warning explains local browser processing, no intentional vault upload, remotely delivered
+code's different trust model, and the recommendation to review/build locally for sensitive
+real vaults. Continue is not consent to discard drafts. Acknowledgment lasts for this tab
+session including reloads; duplicated/restored tabs may inherit it. If storage is unavailable,
+only the immediate explicit picker attempt is authorized; later attempts warn again.
+Use the production-build instructions below for ordinary, unmarked local use.
 
 You must trust the host, repository account, build dependencies, and delivered JavaScript. A malicious or changed build can read a selected plaintext vault and remove security controls; CSP is not proof that a hosted copy is trustworthy. For sensitive use, review/build the source and serve it locally. Never deploy vault files alongside the app.
+
+#### Publish the optional demo (maintainers)
+
+1. Review and merge the workflow/application changes into `main`; enable GitHub Actions in
+   an eligible nonfork Pages repository/account. No personal access token is required.
+2. Set **Settings → Pages → Build and deployment → Source → GitHub Actions**.
+3. Configure the **github-pages** environment to allow only `main`; add approval protection
+   where supported. This workflow does not enable Pages or change repository settings itself.
+4. In **Settings → Secrets and variables → Actions → Variables**, add repository variable
+   **`VAULTSORT_PAGES_ENABLED`** with exact value **`true`**. Missing/other values disable publication.
+5. Push an eligible new commit to `main`, or rerun the current eligible main-push run.
+   Inspect the CI run's successful deployment `page_url` and resources before sharing that URL.
+
+`.github/workflows/ci.yml` always verifies main pushes and main-targeting PRs with Node 24,
+`npm ci`, lint, tests and build. Only a successful nonfork main push with the opt-in builds
+a marked demo from that same immutable SHA. Pages metadata supplies the root/repository
+base; only `dist/` is uploaded, with symlinks rejected. PRs never receive publication authority.
+Deployment runs no application/npm code, uses the github-pages environment and isolated
+Pages/OIDC permissions, and publishes this workflow run's artifact only.
+
+Publication is serialized in `vaultsort-pages-publication` without cancelling an active
+deployment (up to 100 queued jobs). Immediately before publishing, every attempt/rerun checks
+current main inside the lock. Stale revisions skip; API/status/shape failures block publication.
+If newer main fails, the previous published demo stays; there is no fallback to an old run.
+Keep main history forward-only and use a **new verified revert commit** for rollback, not a
+force reset or obsolete rerun. Other publishers/history resets are outside this guarantee.
+
+Remove the variable or set it to `false` to stop future eligible publication. This **does not
+unpublish an existing site or guarantee cancellation of in-flight work**; take a site down
+through Pages administration separately. Missing Pages setup can fail demo publication while
+mandatory verification still succeeds. CI/Pages has not been live-executed as implementation
+evidence; browser/deployment validation was deferred at the user's request.
 
 ## Tech stack
 
@@ -63,7 +107,11 @@ Open the printed localhost URL. HMR is intentionally disabled: refresh after sou
 
 ## Production build
 
+**Recommended for sensitive vaults:** review the source/dependencies, then build and serve
+locally on a trusted device. Leave `VITE_HOSTED_DEMO` unset for the ordinary local build.
+
 ```bash
+npm ci
 npm run build
 npm run preview
 ```
@@ -140,7 +188,7 @@ npm test
 npm run build
 ```
 
-Tests cover preservation, folder operations, validation, session history, DOM privacy, branding, translation coverage, preference restoration, and all four current language/theme combinations. Automated UI tests use jsdom; browser/RTL visual checks are still needed for UI changes. No CI workflow or separate formatting command is currently configured.
+Tests cover preservation, folder operations, validation, session history, DOM privacy, branding, translation coverage, preference restoration, hosted import gates, workflow contracts and all four current language/theme combinations. Automated UI tests use jsdom; browser/RTL visual checks are still needed for UI changes. CI runs `npm ci`, lint, tests and the production build for pushes to main and pull requests targeting main, using Node 24 with read-only verification permissions. No separate formatting command is configured.
 
 Refinement acceptance evidence and remaining gates are recorded in
 [`specs/001-refine-vault-usability/implementation.md`](specs/001-refine-vault-usability/implementation.md).

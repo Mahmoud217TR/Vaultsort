@@ -6,6 +6,18 @@ import App from '../App.vue'
 import vaultsortLogo from '../branding/vaultsort-logo.svg'
 
 describe('local branding and design system', () => {
+  it('keeps startup ordering and base-relative public resources for demo CLI overrides', () => {
+    const html = readFileSync('index.html', 'utf8')
+    expect(html.indexOf('<script src="/preferences.js">')).toBeLessThan(html.indexOf('<link'))
+    expect(readFileSync('vite.config.ts', 'utf8')).toContain("base: './'")
+    expect(html).toContain("form-action 'none'")
+    const manifest = JSON.parse(readFileSync('public/site.webmanifest', 'utf8'))
+    for (const base of ['https://example.test/', 'https://example.test/demo-check/']) {
+      for (const resource of [manifest.start_url, manifest.scope, ...manifest.icons.map((icon: { src: string }) => icon.src)]) {
+        expect(new URL(resource, base).href).toMatch(new RegExp(`^${base.replaceAll('.', '\\.')}`))
+      }
+    }
+  })
   it('uses the supplied logo unchanged, with its aspect ratio and accessible link', () => {
     const wrapper = mount(App)
     try {

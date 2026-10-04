@@ -6,6 +6,9 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 
 ### Added
 
+- Mandatory main-bound Node 24 CI and opt-in, SHA-pinned GitHub Pages demo build/publication with isolated permissions, same-run artifact provenance and serialized current-main checking. Publication remains disabled unless explicitly enabled; live execution is not claimed.
+- English/Arabic hosted demo identification and pre-picker/read trust warning, fixed tab-session acknowledgment and storage-failure one-attempt fallback, preserving unsaved-work guards and local-build behavior.
+
 - Editable export filenames with scope-specific defaults, Unicode-aware 200-code-point validation and an explicit browser/OS saved-name boundary; original-copy downloads remain byte-exact.
 - Selected-item and recursive actual/virtual folder JSON exports with source-order structural closure, unknown-data preservation, result validation and mapped source-warning links. Unsafe ownership narrowing and duplicate paths within folder-export branches block without repair.
 - Complete privacy-aware duplicate comparison with explicit name-only rename, confirmed single-candidate deletion and undo, plus in-memory group/rule ignore and restore. No automatic credential merging or survivor choice.
@@ -41,6 +44,6 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 - Export/comparison requests are revision-bound; subset downloads do not mark whole-vault edits saved. Ignore state never modifies documents/history/validation and resets on document changes. Comparison values and sensitive labels are projected to fixed masks before DOM binding.
 - Documented that subsets preserve opaque root metadata and are not sanitization/anonymization; ownership/import-route limitations are disclosed without claiming actual local importer verification.
 
-- Vault documents, original bytes, drafts, and history remain in memory; only language/theme preferences are persisted.
+- Vault documents, original bytes, drafts, and history remain in memory; only language/theme preferences are persisted in localStorage, with one fixed hosted-only tab-session acknowledgment in sessionStorage.
 - DOM privacy masks, escaped imported content, local-only CSP, and preservation/security regression tests are part of the current implementation.
 - Community reporting instructions require synthetic reproductions and prohibit sharing actual vaults or credentials.

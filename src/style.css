@@ -199,6 +199,9 @@ select { font-size: 12px; }
 .change-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-disabled); }
 .change-dot.changed { background: var(--brand); }
 .brand-group { display: flex; align-items: center; gap: 12px; min-inline-size: 0; }
+.demo-label { font-size: 11px; font-weight: 650; color: var(--text-primary); border: 1px solid var(--border-default); border-radius: 4px; padding: 3px 6px; max-inline-size: 120px; overflow-wrap: anywhere; }
+.demo-statements { padding-inline-start: 20px; margin-block-end: 16px; }
+.demo-statements li + li { margin-block-start: 12px; }
 .brand-group .brand-label { text-decoration: none; }
 .sidebar-footer a, .import-footer a { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .sidebar-footer a { margin-block: 5px; }

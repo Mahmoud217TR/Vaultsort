@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { errorMessage, languages, translate, type Message } from './i18n'
 import { setLanguage, setTheme, theme } from './preferences'
+import { acknowledgeDemo, demoAcknowledged, hostedDemo } from './hostedDemo'
 import Icon from './components/Icon.vue'
 import vaultsortLogo from './branding/vaultsort-logo.svg'
 import ItemEditor from './components/ItemEditor.vue'
@@ -26,6 +27,12 @@ const { originalBytes, originalName, workingDocument: doc, changes, dirty, canUn
 const documentRevision = ref(0)
 watch(doc, () => { documentRevision.value++ }, { flush: 'sync' })
 const fileInput = ref<HTMLInputElement>()
+const hostedWarning = ref(false)
+const hostedModal = ref<InstanceType<typeof Modal>>()
+let hostedTrigger: HTMLElement | null = null
+let immediatePicker = false
+let pickerApproval: number | null = null
+let importGuardVersion = 0
 const searchInput = ref<HTMLInputElement>()
 const privacy = ref(true)
 const importing = ref(false)
@@ -307,6 +314,34 @@ function changeView(id: string, folder = 'all') {
 }
 function togglePrivacy() { if (discardDraft()) privacy.value = !privacy.value }
 function unsavedConfirm() { return !(dirty.value || draftDirty.value || folderDraftDirty.value || comparisonNameDirty.value) || window.confirm(t('confirm.unsaved')) }
+watch([doc, dirty, draftDirty, folderDraftDirty, comparisonNameDirty, folderLabel, parentFolderPath, current], () => { importGuardVersion++ }, { flush: 'sync' })
+function inputChanged(event: Event) { if (event.target !== fileInput.value) importGuardVersion++ }
+function cancelPicker() { immediatePicker = false; pickerApproval = null }
+function showHostedWarning() {
+  cancelPicker()
+  if (!hostedWarning.value) hostedTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  hostedWarning.value = true
+}
+function dismissHostedWarning(local = false) {
+  hostedModal.value?.close()
+  hostedWarning.value = false
+  cancelPicker()
+  if (local) importError.value = { key: 'hostedDemo.guidance' }
+  nextTick(() => (hostedTrigger?.isConnected && hostedTrigger !== fileInput.value ? hostedTrigger : document.querySelector<HTMLElement>('.import-button, .sidebar-footer button'))?.focus({ preventScroll: true }))
+}
+function continueHosted() {
+  acknowledgeDemo()
+  hostedModal.value?.close() // Close synchronously to preserve native picker user activation.
+  hostedWarning.value = false
+  chooseFile(undefined, true)
+}
+function inputClick(event: MouseEvent) {
+  if (!demoAcknowledged() && !immediatePicker) { event.preventDefault(); showHostedWarning(); return }
+  if (pickerApproval !== importGuardVersion) {
+    if (!unsavedConfirm()) { event.preventDefault(); cancelPicker(); return }
+    pickerApproval = importGuardVersion
+  }
+}
 function resetUI() {
   current.value = null
   editorTrigger = null
@@ -332,6 +367,7 @@ function resetUI() {
 }
 function closeVault() {
   if (!unsavedConfirm()) return
+  cancelPicker()
   readVersion++
   reader?.abort()
   reader = null
@@ -342,13 +378,27 @@ function closeVault() {
   for (const url of objectUrls) URL.revokeObjectURL(url)
   objectUrls.clear()
 }
-function chooseFile() {
+function chooseFile(_event?: Event, explicitContinue = false) {
+  cancelPicker()
+  if (!demoAcknowledged() && !explicitContinue) { showHostedWarning(); return }
   if (!unsavedConfirm()) return
+  immediatePicker = explicitContinue
+  pickerApproval = importGuardVersion
   fileInput.value?.click()
 }
 function importFile(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const input = event.target as HTMLInputElement
+  if (!demoAcknowledged() && !immediatePicker) {
+    input.value = ''
+    importError.value = { key: 'hostedDemo.blocked' }
+    showHostedWarning()
+    return
+  }
+  const approved = pickerApproval === importGuardVersion
+  cancelPicker()
+  const file = input.files?.[0]
   if (!file) return
+  if (!approved && !unsavedConfirm()) { input.value = ''; return }
   if (!file.name.toLowerCase().endsWith('.json')) { importError.value = { key: 'errors.selectJson' }; return }
   const version = ++readVersion
   reader?.abort()
@@ -503,6 +553,10 @@ function username(item: VaultItem) {
 function firstUri(item: VaultItem) { const first = uris(item).find(u => isObject(u) && text(u.uri)); return isObject(first) ? text(first.uri) : '' }
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || draftDirty.value || folderDraftDirty.value || comparisonNameDirty.value) { event.preventDefault(); event.returnValue = '' } }
 function shortcuts(event: KeyboardEvent) {
+  if (hostedWarning.value) {
+    if ((event.ctrlKey || event.metaKey) && ['s', 'k', 'z'].includes(event.key.toLowerCase()) || event.key === 'Delete') event.preventDefault()
+    return
+  }
   if (event.defaultPrevented || !doc.value || importing.value) return
   if (event.key === 'Escape' && openControl.value) {
     event.preventDefault()
@@ -534,13 +588,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'vault-open': doc }">
+  <div class="app-shell" :class="{ 'vault-open': doc }" @input.capture="inputChanged">
     <NoteInspector v-if="noteText" :text="noteText" :trigger="noteTrigger" :fallback="fieldsTrigger" @close="noteTarget = null" />
-    <input ref="fileInput" type="file" accept=".json,application/json" class="sr-only" tabindex="-1" :aria-label="t('import.selectFile')" @change="importFile" />
+    <input ref="fileInput" type="file" accept=".json,application/json" class="sr-only" tabindex="-1" :aria-label="t('import.selectFile')" @click="inputClick" @cancel="cancelPicker" @change="importFile" />
     <header class="app-header">
       <div class="brand-group"><a class="brand" href="#" :aria-label="t('app.home')" @click.prevent="doc ? changeView('all') : undefined"><img class="brand-mark" :src="vaultsortLogo" width="32" height="38" alt="" /><bdi>{{ t('app.name') }}</bdi></a><a class="brand-label" href="https://github.com/Mahmoud217TR/Vaultsort" target="_blank" rel="noopener noreferrer" :aria-label="t('workspace.newTab', { label: t('app.tagline') })">{{ t('app.tagline') }}</a></div>
       <div class="header-actions">
-        <span class="local-status"><span class="status-dot" />{{ t('app.local') }}<span class="status-detail">{{ t('common.dot') }} {{ t('app.device') }}</span></span>
+        <span v-if="hostedDemo" class="demo-label">{{ t('hostedDemo.label') }}</span>
+        <span v-if="!hostedDemo" class="local-status"><span class="status-dot" />{{ t('app.local') }}<span class="status-detail">{{ t('common.dot') }} {{ t('app.device') }}</span></span>
         <label class="preference-control"><span class="sr-only">{{ t('app.language') }}</span><select :value="locale" :aria-label="t('app.language')" @change="setLanguage(($event.target as HTMLSelectElement).value)"><option v-for="language in languages" :key="language.code" :value="language.code" :lang="language.code">{{ t(`app.${language.code}`) }}</option></select></label>
         <label class="preference-control"><span class="sr-only">{{ t('app.theme') }}</span><select :value="theme" :aria-label="t('app.theme')" @change="setTheme(($event.target as HTMLSelectElement).value)"><option value="light">{{ t('app.light') }}</option><option value="dark">{{ t('app.dark') }}</option></select></label>
         <Tooltip :text="t('workspace.helpHelp')"><button class="icon-button help-button" :aria-label="t('app.help')" @click="modal = 'help'">{{ t('app.helpSymbol') }}</button></Tooltip>
@@ -715,5 +770,10 @@ onBeforeUnmount(() => {
     </Modal>
     <Modal v-if="modal === 'changes'" :title="t('audit.title')" @close="modal = null"><p class="modal-description">{{ t('audit.description') }}</p><ol v-if="changes.length" class="change-list"><li v-for="(change, index) in changes" :key="index"><span>{{ number(index + 1) }}</span>{{ translate(change) }}</li></ol><div v-else class="empty-state"><Icon name="review" :size="28" /><h3>{{ t('audit.empty') }}</h3><p>{{ t('audit.unchanged') }}</p></div><p class="hint">{{ t('audit.hint') }}</p></Modal>
     <Modal v-if="modal === 'help'" :title="t('help.title')" @close="modal = null"><p class="modal-description">{{ t('help.description') }}</p><p class="hint">{{ t('help.saving') }}</p><div class="shortcut-list"><div><span>{{ t('help.search') }}</span><kbd>{{ t('help.searchKey') }}</kbd></div><div><span>{{ t('help.export') }}</span><kbd>{{ t('help.exportKey') }}</kbd></div><div><span>{{ t('help.history') }}</span><kbd>{{ t('help.redoKey') }}</kbd><kbd>{{ t('help.undoKey') }}</kbd></div><div><span>{{ t('help.delete') }}</span><kbd>{{ t('help.deleteKey') }}</kbd></div><div><span>{{ t('help.close') }}</span><kbd>{{ t('help.escapeKey') }}</kbd></div></div><p class="hint">{{ t('help.privacy') }}</p></Modal>
+    <Modal v-if="hostedWarning" ref="hostedModal" class="hosted-warning" :title="t('hostedDemo.title')" @close="dismissHostedWarning()">
+      <ul class="demo-statements"><li v-for="key in ['processing', 'upload', 'trust', 'recommend', 'choice']" :key="key">{{ t(`hostedDemo.${key}`) }}</li></ul>
+      <p class="hint">{{ t('hostedDemo.guidance') }}</p>
+      <template #footer><button class="button demo-local" @click="dismissHostedWarning(true)">{{ t('hostedDemo.local') }}</button><button class="button demo-cancel" autofocus @click="dismissHostedWarning()">{{ t('common.cancel') }}</button><button class="button primary demo-continue" @click="continueHosted">{{ t('hostedDemo.continue') }}</button></template>
+    </Modal>
   </div>
 </template>
