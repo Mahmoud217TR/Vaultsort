@@ -12,7 +12,7 @@ import NoteInspector from './components/NoteInspector.vue'
 import Tooltip from './components/Tooltip.vue'
 import { useVault } from './composables/useVault'
 import type { Issue, IssueRequest } from './domain/vault'
-import { knownTypes, itemType } from './domain/vault'
+import { compareItems, defaultExportFilename, groupSignature, knownTypes, itemType, parseVault, prepareVaultExport, projectComparison, resolveExportFilename, updateItem, type CandidateRequest, type ComparisonViewRow, type DuplicateRequest, type ExportScope } from './domain/vault'
 import { createFolder, deleteFolder, deleteItems, domain, duplicateLabel, findDuplicates, folderLeaf, folderName, folderParent, folders, folderTree, isObject, items, login, maskUsername, matchesSearch, mergeFolders, moveFolder, moveItems, organizationName, renameFolder, replaceItem, serializeVault, sortItemRows, text, typeName, uris, validateVault, withinFolder, type ItemSort, type SortDirection, type VaultExport, type VaultItem } from './domain/vault'
 
 const { t, locale } = useI18n()
@@ -73,6 +73,17 @@ const draftDirty = ref(false)
 const page = ref(1)
 const pageSize = 75
 const modal = ref<'summary' | 'folders' | 'folder' | 'export' | 'changes' | 'help' | null>(null)
+const exportFilename = ref('')
+const resolvedFilename = computed(() => resolveExportFilename(exportFilename.value))
+const exportReview = ref<{ revision: number; scope: ExportScope; document: VaultExport | null; itemSources: number[]; folderSources: number[]; issues: Issue[]; invalidated: boolean } | null>(null)
+const exportFresh = computed(() => !!exportReview.value && !exportReview.value.invalidated && exportReview.value.revision === documentRevision.value)
+const exportIssues = computed(() => exportReview.value?.issues ?? [])
+const exportErrors = computed(() => exportIssues.value.filter(issue => issue.severity === 'error').length)
+watch(modal, value => { if (value !== 'export') { exportFilename.value = ''; exportReview.value = null } }, { flush: 'sync' })
+watch(selected, value => {
+  const review = exportReview.value
+  if (review?.scope.kind === 'selected' && JSON.stringify([...value].sort((a, b) => a - b)) !== JSON.stringify(review.scope.indexes)) review.invalidated = true
+}, { flush: 'sync' })
 const folderAction = ref<'create' | 'rename' | 'move' | 'delete' | 'merge'>('create')
 const activeFolder = ref('')
 const folderLabel = ref('')
@@ -97,7 +108,7 @@ const displayedNav = computed(() => nav.filter(entry => entry.id !== '5' || view
 const displayedTypes = computed(() => knownTypes.filter(entry => entry.type !== 5 || typeFilter.value === '5' || allItems.value.some(item => item.type === 5)))
 const sortLabel = computed(() => t({ original: 'workspace.originalOrder', name: 'workspace.alphabetical', creationDate: 'workspace.created', revisionDate: 'workspace.modified' }[sortBy.value]))
 const allFolders = computed(() => doc.value ? folders(doc.value).map(folder => ({ id: text(folder.id), name: text(folder.name) })) : [])
-const folderRows = computed(() => doc.value ? folderTree(doc.value) : [])
+const folderRows = computed(() => doc.value ? folderTree(doc.value).map(row => ({ ...row, revision: documentRevision.value })) : [])
 const activeFolderPath = computed(() => allFolders.value.find(folder => folder.id === activeFolder.value)?.name ?? '')
 const parentPaths = computed(() => [...new Set(folderRows.value.map(row => row.path).filter(path => path && (folderAction.value === 'create' || !withinFolder(path, activeFolderPath.value))))])
 const folderTarget = computed(() => [parentFolderPath.value, folderAction.value === 'move' ? folderLabel.value : folderLabel.value.trim()].filter(Boolean).join('/'))
@@ -113,6 +124,95 @@ const folderCounts = computed(() => {
   return counts
 })
 const duplicates = computed(() => doc.value ? findDuplicates(doc.value) : [])
+const reviewGroups = computed(() => [...new Map(duplicates.value.map(group => [groupSignature(group), group])).values()])
+const ignoredGroups = ref(new Set<string>())
+const comparison = ref<DuplicateRequest | null>(null)
+const comparisonRenameIndex = ref<number | null>(null)
+const comparisonNameDirty = ref(false)
+let comparisonTrigger: HTMLElement | null = null
+const comparisonRows = ref<ComparisonViewRow[]>([])
+// Eager projection releases disclosures on privacy/revision/close changes even if Review is unmounted.
+watch([comparison, doc, privacy], () => {
+  const request = comparison.value
+  comparisonRows.value = request && doc.value && request.revision === documentRevision.value ? projectComparison(compareItems(request.indexes.map(index => items(doc.value!)[index]!)), privacy.value) : []
+}, { flush: 'sync' })
+watch(doc, () => {
+  if (comparison.value) {
+    notify('comparison.unavailable')
+    nextTick(() => document.querySelector<HTMLElement>('.review-filter select')?.focus({ preventScroll: true }))
+  }
+  comparison.value = null
+  comparisonRenameIndex.value = null
+  comparisonNameDirty.value = false
+  comparisonTrigger = null
+  ignoredGroups.value = new Set()
+}, { flush: 'sync' })
+function validGroup(request: DuplicateRequest) {
+  return request.revision === documentRevision.value && request.indexes.length >= 2 && !ignoredGroups.value.has(groupSignature(request)) && reviewGroups.value.some(group => groupSignature(group) === groupSignature(request))
+}
+function validCandidate(request: CandidateRequest) {
+  return comparison.value && groupSignature(comparison.value) === groupSignature(request.group) && validGroup(request.group) && Number.isInteger(request.index) && request.index >= 0 && request.group.indexes.includes(request.index) && !!allItems.value[request.index]
+}
+function openComparison(request: DuplicateRequest, trigger: HTMLElement) {
+  if (!validGroup(request)) { notify('comparison.unavailable'); return }
+  if (!closeComparison()) return
+  comparisonTrigger = trigger
+  comparison.value = { ...request, indexes: [...request.indexes].sort((a, b) => a - b) }
+  nextTick(() => document.querySelector<HTMLElement>('.comparison-back')?.focus())
+}
+function closeComparison() {
+  if (comparisonNameDirty.value && !window.confirm(t('comparison.discard'))) return false
+  const trigger = comparisonTrigger
+  const wasOpen = !!comparison.value
+  comparison.value = null
+  comparisonRenameIndex.value = null
+  comparisonNameDirty.value = false
+  comparisonTrigger = null
+  if (wasOpen) nextTick(() => (trigger?.isConnected ? trigger : document.querySelector<HTMLElement>('.review-filter select') ?? document.querySelector<HTMLElement>('.review-nav'))?.focus({ preventScroll: true }))
+  return true
+}
+function beginCandidateRename(request: CandidateRequest) {
+  if (!validCandidate(request)) { notify('comparison.unavailable'); return }
+  if (comparisonRenameIndex.value === request.index) return
+  if (comparisonNameDirty.value && !window.confirm(t('comparison.discard'))) return
+  if (draftDirty.value && !window.confirm(t('confirm.discardItem'))) return
+  if (!validCandidate(request)) { notify('comparison.unavailable'); return }
+  if (draftDirty.value) { draftDirty.value = false; editorVersion.value++ }
+  comparisonRenameIndex.value = request.index
+  nextTick(() => document.querySelector<HTMLElement>('.comparison-name-input')?.focus())
+}
+function cancelCandidateRename() {
+  const ordinal = comparison.value?.indexes.indexOf(comparisonRenameIndex.value!) ?? 0
+  comparisonRenameIndex.value = null
+  comparisonNameDirty.value = false
+  nextTick(() => document.querySelectorAll<HTMLElement>('.rename-candidate')[ordinal]?.focus({ preventScroll: true }))
+}
+function resolveCandidate(request: CandidateRequest, action: 'rename' | 'delete') {
+  if (!validCandidate(request) || action === 'rename' && comparisonRenameIndex.value !== request.index) { notify('comparison.unavailable'); return }
+  if (action === 'rename' && typeof request.name !== 'string') { notify('comparison.invalidName'); return }
+  if (action === 'delete' && !window.confirm(t('comparison.confirmDelete', { name: text(allItems.value[request.index]!.name) || t('common.untitled'), index: request.index + 1, count: 1 }))) return
+  if (action === 'delete' && comparisonNameDirty.value && !window.confirm(t('comparison.discard'))) return
+  if (draftDirty.value && !window.confirm(t('confirm.discardItem'))) return
+  if (!validCandidate(request)) { notify('comparison.unavailable'); return }
+  try {
+    commit(action === 'rename' ? { key: 'audit.item', params: { index: request.index + 1 }, fields: ['audit.name'] } : { key: 'audit.deleted', params: { count: 1 } }, document => {
+      if (action === 'rename') updateItem(document, request.index, { name: request.name! })
+      else deleteItems(document, [request.index])
+      parseVault(serializeVault(document))
+      validateVault(document)
+    })
+    draftDirty.value = false
+    editorVersion.value++
+    if (action === 'delete') { current.value = null; selected.value = [] }
+    notify(action === 'rename' ? 'comparison.renamed' : 'comparison.deleted')
+  } catch { notify('notice.applyFailed') }
+}
+function ignoreGroup(request: DuplicateRequest) {
+  if (!validGroup(request)) { notify('comparison.unavailable'); return }
+  if (!closeComparison()) return
+  if (!validGroup(request)) { notify('comparison.unavailable'); return }
+  ignoredGroups.value.add(groupSignature(request))
+}
 const validation = computed(() => ({ revision: documentRevision.value, issues: doc.value ? validateVault(doc.value) : [] }))
 const issues = computed(() => validation.value.issues)
 const itemIssues = computed(() => {
@@ -137,7 +237,6 @@ function inspectIssue(request: IssueRequest) {
   modal.value = null
   issueContext.value = { ...request }
 }
-const errorCount = computed(() => issues.value.filter(issue => issue.severity === 'error').length)
 const warningItems = computed(() => new Set(issues.value.flatMap(issue => issue.itemIndex === undefined ? [] : [issue.itemIndex])))
 const organizations = computed(() => [...new Set(allItems.value.map(item => text(item.organizationId)).filter(Boolean))])
 const heading = computed(() => folderFilter.value !== 'all' ? folderName(doc.value!, folderFilter.value === '__unassigned' ? null : folderFilter.value) : t(nav.find(n => n.id === view.value)?.label ?? 'nav.all'))
@@ -198,6 +297,7 @@ function closeEditor() {
   nextTick(() => (editorTrigger?.isConnected ? editorTrigger : document.querySelector<HTMLElement>('.table-scroll') ?? searchInput.value)?.focus({ preventScroll: true }))
 }
 function changeView(id: string, folder = 'all') {
+  if (comparison.value && !closeComparison()) return
   view.value = id
   folderFilter.value = folder
   typeFilter.value = 'all'
@@ -206,7 +306,7 @@ function changeView(id: string, folder = 'all') {
   query.value = ''
 }
 function togglePrivacy() { if (discardDraft()) privacy.value = !privacy.value }
-function unsavedConfirm() { return !(dirty.value || draftDirty.value || folderDraftDirty.value) || window.confirm(t('confirm.unsaved')) }
+function unsavedConfirm() { return !(dirty.value || draftDirty.value || folderDraftDirty.value || comparisonNameDirty.value) || window.confirm(t('confirm.unsaved')) }
 function resetUI() {
   current.value = null
   editorTrigger = null
@@ -284,17 +384,44 @@ function download(data: BlobPart, name: string) {
   setTimeout(() => { URL.revokeObjectURL(url); objectUrls.delete(url) }, 1000)
 }
 function downloadOriginal() { if (originalBytes.value) download(originalBytes.value, `original-${originalName.value}`) }
-function requestExport() {
+function requestExport(scope: ExportScope = { kind: 'full' }, revision = documentRevision.value) {
   if (!doc.value) return
+  if (revision !== documentRevision.value) { notify('export.stale'); return }
+  if (scope.kind === 'selected' && (!scope.indexes.length || scope.indexes.some(index => !Number.isInteger(index) || index < 0 || index >= allItems.value.length) || new Set(scope.indexes).size !== scope.indexes.length)) { notify('export.invalidScope'); return }
+  if (scope.kind === 'folder' && !folderRows.value.some(row => row.path === scope.path && row.index === scope.folderIndex)) { notify('export.invalidScope'); return }
   if (modal.value === 'folder') { notify('notice.folderBeforeExport'); return }
   if (draftDirty.value) { notify('notice.itemBeforeExport'); return }
+  const captured: ExportScope = scope.kind === 'selected' ? { kind: 'selected', indexes: [...scope.indexes].sort((a, b) => a - b) } : { ...scope }
+  const review = { revision: documentRevision.value, scope: captured, document: null as VaultExport | null, itemSources: [] as number[], folderSources: [] as number[], issues: [] as Issue[], invalidated: false }
+  try {
+    const prepared = prepareVaultExport(doc.value, captured)
+    review.document = parseVault(serializeVault(prepared.document))
+    review.itemSources = prepared.itemSources
+    review.folderSources = prepared.folderSources
+    review.issues = [...validateVault(review.document), ...prepared.diagnostics]
+  } catch (error) { review.issues = [{ severity: 'error', message: error instanceof Error && ['export.invalidScope', 'export.unsafeOwnership', 'export.ambiguousBranch', 'validation.folderName'].includes(error.message) ? error.message : errorMessage(error, 'errors.open').key }] }
+  exportReview.value = review
+  exportFilename.value = defaultExportFilename(originalName.value, captured.kind)
   modal.value = 'export'
 }
+function sourceExportIssue(issue: Issue) {
+  if (!exportFresh.value || issue.itemIndex === undefined || !exportIssues.value.includes(issue)) return
+  const index = exportReview.value!.itemSources[issue.itemIndex]
+  return issues.value.find(candidate => candidate.message === issue.message && candidate.severity === issue.severity && candidate.itemIndex === index && candidate.field === issue.field && candidate.entryIndex === issue.entryIndex)
+}
+function inspectExportIssue(issue: Issue) {
+  if (!exportFresh.value || !exportIssues.value.includes(issue)) { notify('export.stale'); return }
+  const source = sourceExportIssue(issue)
+  if (source) inspectIssue({ revision: documentRevision.value, issue: source })
+}
 function exportVault() {
-  if (!doc.value || errorCount.value) return
+  const filename = resolvedFilename.value.name
+  if (!doc.value || !exportReview.value?.document || exportErrors.value || !filename) return
+  if (!exportFresh.value) { notify('export.stale'); return }
+  if (draftDirty.value) { notify('notice.itemBeforeExport'); return }
   try {
-    download(serializeVault(doc.value), `bitwarden-cleaned-${new Date().toISOString().slice(0, 10)}.json`)
-    markExported()
+    download(serializeVault(exportReview.value.document), filename)
+    if (exportReview.value.scope.kind === 'full') markExported()
     modal.value = null
     notify('notice.download')
   } catch { notify('notice.downloadFailed') }
@@ -374,7 +501,7 @@ function username(item: VaultItem) {
   return value ? privacy.value ? maskUsername(value) : value : t('common.dash')
 }
 function firstUri(item: VaultItem) { const first = uris(item).find(u => isObject(u) && text(u.uri)); return isObject(first) ? text(first.uri) : '' }
-function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || draftDirty.value || folderDraftDirty.value) { event.preventDefault(); event.returnValue = '' } }
+function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || draftDirty.value || folderDraftDirty.value || comparisonNameDirty.value) { event.preventDefault(); event.returnValue = '' } }
 function shortcuts(event: KeyboardEvent) {
   if (event.defaultPrevented || !doc.value || importing.value) return
   if (event.key === 'Escape' && openControl.value) {
@@ -387,6 +514,8 @@ function shortcuts(event: KeyboardEvent) {
   const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
   if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 's') { event.preventDefault(); requestExport(); return }
   if (modal.value) return
+  if (event.key === 'Escape' && comparison.value && view.value === 'review') { event.preventDefault(); closeComparison(); return }
+  if (event.key === 'Delete' && comparison.value && !editing) { event.preventDefault(); return }
   if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') { event.preventDefault(); view.value = 'all'; nextTick(() => searchInput.value?.focus()); return }
   if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'z' && !editing) { event.preventDefault(); historyAction(event.shiftKey ? 'redo' : 'undo'); return }
   if (event.key === 'Delete' && !editing) { event.preventDefault(); removeItems(selected.value.length ? [...selected.value] : current.value === null ? [] : [current.value]); return }
@@ -432,7 +561,7 @@ onBeforeUnmount(() => {
           <Tooltip :text="t('workspace.helpPrivacy')"><button class="privacy-toggle" :class="{ enabled: privacy }" :aria-pressed="privacy" @click="togglePrivacy"><Icon :name="privacy ? 'eyeOff' : 'eye'" :size="16" />{{ t('workspace.privacy') }}<span class="toggle-track"><span /></span></button></Tooltip><span class="toolbar-separator" />
           <Tooltip :text="t('workspace.helpUndo')"><button class="icon-button" :disabled="!canUndo" :aria-label="t('workspace.undo')" @click="historyAction('undo')"><Icon name="undo" /></button></Tooltip>
           <Tooltip :text="t('workspace.helpRedo')"><button class="icon-button" :disabled="!canRedo" :aria-label="t('workspace.redo')" @click="historyAction('redo')"><Icon name="redo" /></button></Tooltip>
-          <button class="changes-button" @click="modal = 'changes'"><span :class="['change-dot', { changed: changes.length }]" />{{ t('workspace.changes', { count: number(changes.length) }) }}</button><button class="button primary small" @click="requestExport"><Icon name="download" :size="16" />{{ t('workspace.export') }}</button>
+          <button class="changes-button" @click="modal = 'changes'"><span :class="['change-dot', { changed: changes.length }]" />{{ t('workspace.changes', { count: number(changes.length) }) }}</button><button class="button primary small" @click="requestExport()"><Icon name="download" :size="16" />{{ t('workspace.export') }}</button>
         </div>
       </div>
       <div class="workspace" :inert="importing">
@@ -443,12 +572,13 @@ onBeforeUnmount(() => {
               <span v-if="row.index === null" class="folder-select" :title="t('folder.groupTitle', { path: row.path })"><Icon name="folder" :size="16" /><span><bdi>{{ row.label }}</bdi></span></span>
               <button v-else class="folder-select" :title="row.path" :aria-current="row.id && folderFilter === row.id ? 'page' : undefined" @click="changeView('all', row.id || 'all')"><Icon name="folder" :size="16" /><span><bdi>{{ row.label }}</bdi></span><span class="nav-count">{{ number(folderCounts.get(row.id) || 0) }}</span></button>
               <Tooltip v-if="row.index !== null" :text="t('folder.manage')"><button class="folder-menu" :aria-label="t('folder.manageNumber', { index: row.index! + 1 })" @click="folderDialog('rename', row.id)"><Icon name="more" :size="15" /></button></Tooltip>
+              <button class="folder-menu export-folder" :aria-label="t('export.folderNumber', { index: index + 1 })" @click="requestExport({ kind: 'folder', path: row.path, folderIndex: row.index }, row.revision)"><Icon name="download" :size="15" /></button>
             </div>
             <button class="new-folder" @click="folderDialog('create')"><Icon name="plus" :size="16" />{{ t('folder.new') }}</button>
           </nav>
           <div class="sidebar-divider" /><button class="review-nav" :class="{ active: view === 'review' }" :aria-current="view === 'review' ? 'page' : undefined" @click="changeView('review')"><Icon name="review" :size="18" /><span>{{ t('nav.review') }}</span><span v-if="issues.length" class="review-count">{{ number(issues.length) }}</span></button>
         </div><footer class="sidebar-footer"><Tooltip :text="t('workspace.helpOriginal')"><button class="original-copy" @click="downloadOriginal"><Icon name="download" :size="16" />{{ t('workspace.original') }}</button></Tooltip><button @click="chooseFile"><Icon name="upload" :size="16" />{{ t('nav.open') }}</button><button @click="closeVault"><Icon name="logout" :size="16" />{{ t('nav.close') }}</button><a href="https://github.com/Mahmoud217TR/Vaultsort" target="_blank" rel="noopener noreferrer" :aria-label="t('workspace.newTab', { label: t('workspace.repository') })">{{ t('workspace.repository') }}<Icon name="arrow" :size="12" /></a><a href="https://github.com/Mahmoud217TR/Vaultsort/issues" target="_blank" rel="noopener noreferrer" :aria-label="t('workspace.newTab', { label: t('workspace.havingIssue') })">{{ t('workspace.havingIssue') }}<Icon name="arrow" :size="12" /></a></footer></aside>
-        <ReviewPanel v-if="view === 'review'" :document="doc" :validation="validation" @select="selectItem" @inspect-issue="inspectIssue" />
+        <ReviewPanel v-if="view === 'review'" :document="doc" :validation="validation" :duplicates="reviewGroups" :ignored="ignoredGroups" :comparison="comparison" :comparison-rows="comparisonRows" :rename-index="comparisonRenameIndex" @select="selectItem" @inspect-issue="inspectIssue" @compare="openComparison" @back="closeComparison" @ignore="ignoreGroup" @restore="ignoredGroups = new Set()" @rename-start="beginCandidateRename" @rename="resolveCandidate($event, 'rename')" @delete="resolveCandidate($event, 'delete')" @cancel-rename="cancelCandidateRename" @comparison-dirty="comparisonNameDirty = $event" />
         <section v-else class="items-panel" :aria-label="t('workspace.items')"><div class="panel-heading"><div><span class="eyebrow">{{ t('workspace.eyebrow') }}</span><h1><bdi>{{ heading }}</bdi><span class="heading-count">{{ number(filtered.length) }}</span></h1><p class="muted">{{ t('workspace.description') }}</p></div><span class="heading-icon"><Icon :name="folderFilter === 'all' ? nav.find(n => n.id === view)?.icon || 'grid' : 'folder'" :size="24" /></span></div>
           <div ref="listControls" class="list-controls">
           <div class="search-toolbar"><label class="search-wrap"><Icon name="search" :size="18" /><input ref="searchInput" v-model="query" :aria-label="t('workspace.search')" :placeholder="t('workspace.searchPlaceholder')" autocomplete="off" spellcheck="false" /><kbd>{{ t('help.searchKey') }}</kbd><Tooltip v-if="query" :text="t('workspace.clearSearch')"><button class="icon-button" :aria-label="t('workspace.clearSearch')" @click="query = ''"><Icon name="close" :size="14" /></button></Tooltip></label><Tooltip :text="t('workspace.helpFilters')"><button class="button filter-button" :class="{ 'filter-active': openControl === 'filters' || activeFilters }" :aria-label="t('workspace.filters')" :aria-expanded="openControl === 'filters'" aria-controls="vault-filters" @click="toggleControl('filters', $event)"><Icon name="filter" :size="16" />{{ t('workspace.filters') }}<span v-if="activeFilters" class="count-pill">{{ number(activeFilters) }}</span></button></Tooltip></div>
@@ -476,6 +606,7 @@ onBeforeUnmount(() => {
             <Tooltip :text="t('workspace.removeFavoriteSelected')"><button class="icon-button" :aria-label="t('workspace.removeFavoriteSelected')" @click="bulkFavorite(false)"><Icon name="star" :size="16" /><span class="mini-minus">{{ t('workspace.minus') }}</span></button></Tooltip>
             <Tooltip :text="t('workspace.deleteSelected')"><button class="icon-button danger" :aria-label="t('workspace.deleteSelected')" @click="removeItems([...selected])"><Icon name="trash" :size="16" /></button></Tooltip>
             <Tooltip :text="t('workspace.clearSelection')"><button class="icon-button" :aria-label="t('workspace.clearSelection')" @click="selected = []"><Icon name="close" :size="15" /></button></Tooltip>
+            <button class="button small export-selected" @click="requestExport({ kind: 'selected', indexes: selected })"><Icon name="download" :size="16" />{{ t('export.selectedAction') }}</button>
           </div>
           <div class="table-scroll" tabindex="0" role="region" :aria-label="t('workspace.items')">
             <table class="item-table">
@@ -530,6 +661,7 @@ onBeforeUnmount(() => {
       <div class="folder-manager-list">
         <div v-for="(row, index) in folderRows" :key="index" class="folder-manager-row">
           <div class="folder-manager-name" :style="{ paddingInlineStart: `${Math.min(row.depth, 6) * 12}px` }"><Icon name="folder" :size="17" /><div><strong><bdi>{{ row.label }}</bdi></strong><span><bdi>{{ row.path || t('common.unnamedFolder') }}</bdi><span v-if="row.index === null">{{ t('common.dot') }} {{ t('folder.grouping') }}</span><span v-else>{{ t('common.dot') }} {{ t('common.items', { count: number(folderCounts.get(row.id) || 0) }) }}</span></span></div></div>
+          <button class="text-button export-folder" :aria-label="t('export.folderNumber', { index: index + 1 })" @click="requestExport({ kind: 'folder', path: row.path, folderIndex: row.index }, row.revision)">{{ t('export.folderAction') }}</button>
           <button v-if="row.index === null" class="text-button" :aria-label="t('folder.createGroup', { index: index + 1 })" @click="folderDialog('create', '', folderParent(row.path), folderLeaf(row.path))"><Icon name="plus" :size="14" />{{ t('folder.create') }}</button>
           <div v-else class="folder-manager-actions">
             <button class="text-button" :aria-label="t('folder.editNumber', { index: row.index + 1 })" :disabled="!row.id" @click="folderDialog('rename', row.id)">{{ t('common.edit') }}</button>
@@ -570,9 +702,16 @@ onBeforeUnmount(() => {
     <Modal v-if="modal === 'export'" :title="t('export.title')" wide @close="modal = null">
       <p class="modal-description">{{ t('export.description') }}</p>
       <p class="hint">{{ t('import.plaintext') }}</p>
-      <div class="validation-summary"><span :class="errorCount ? 'error-badge' : 'success-badge'"><Icon :name="errorCount ? 'warning' : 'check'" :size="16" />{{ t('common.errors', { count: number(errorCount) }) }}</span><span class="warning-badge">{{ t('common.warnings', { count: number(issues.length - errorCount) }) }}</span></div>
-      <div class="export-issues"><div v-for="(issue, index) in issues.slice(0, 100)" :key="index" :class="['issue-row', issue.severity]"><Icon name="warning" :size="15" /><div><p>{{ t(issue.message) }}</p><button v-if="issue.itemIndex !== undefined" class="text-button" @click="inspectIssue({ revision: validation.revision, issue })">{{ t('common.inspectItem', { index: issue.itemIndex + 1 }) }}</button><span v-else-if="issue.folderIndex !== undefined" class="muted text-xs">{{ t('common.folderNumber', { index: issue.folderIndex + 1 }) }}</span></div></div><p v-if="issues.length > 100" class="hint">{{ t('export.more', { count: number(issues.length - 100) }) }}</p><p v-if="!issues.length" class="success-message">{{ t('export.ready') }}</p></div>
-      <p class="hint">{{ t(errorCount ? 'export.repair' : 'export.warning') }}</p><template #footer><button class="button" @click="modal = null">{{ t('export.keep') }}</button><Tooltip :text="t(errorCount ? 'export.repair' : 'export.warning')"><button class="button primary" :disabled="!!errorCount" @click="exportVault"><Icon name="download" :size="16" />{{ t('export.download') }}</button></Tooltip></template>
+      <p class="export-scope">{{ t(exportReview?.scope.kind === 'selected' ? 'export.selectedScope' : exportReview?.scope.kind === 'folder' ? 'export.folderScope' : 'export.fullScope', { count: number(exportReview?.document ? items(exportReview.document).length : 0) }) }}<bdi v-if="exportReview?.scope.kind === 'folder'">{{ t('common.dot') }} {{ exportReview.scope.path || t('common.unnamedFolder') }}</bdi></p>
+      <p class="hint">{{ t('export.opaque') }}</p>
+      <label class="field-label" for="export-filename">{{ t('export.filename') }}<input id="export-filename" v-model="exportFilename" dir="auto" autocomplete="off" spellcheck="false" :aria-invalid="!!resolvedFilename.error" :aria-describedby="resolvedFilename.error ? 'export-filename-help export-filename-error' : 'export-filename-help'" /></label>
+      <p id="export-filename-help" class="hint">{{ t('export.filenameHelp') }}</p>
+      <p v-if="resolvedFilename.name" class="export-filename-preview"><bdi>{{ resolvedFilename.name }}</bdi></p>
+      <p v-if="resolvedFilename.error" id="export-filename-error" class="error-message" role="alert">{{ t(resolvedFilename.error) }}</p>
+      <p v-if="!exportFresh" class="error-message" role="alert">{{ t('export.stale') }}</p>
+      <div class="validation-summary"><span :class="exportErrors ? 'error-badge' : 'success-badge'"><Icon :name="exportErrors ? 'warning' : 'check'" :size="16" />{{ t('common.errors', { count: number(exportErrors) }) }}</span><span class="warning-badge">{{ t('common.warnings', { count: number(exportIssues.length - exportErrors) }) }}</span></div>
+      <div class="export-issues"><div v-for="(issue, index) in exportIssues.slice(0, 100)" :key="index" :class="['issue-row', issue.severity]"><Icon name="warning" :size="15" /><div><p>{{ t(issue.message) }}</p><button v-if="sourceExportIssue(issue)" class="text-button" @click="inspectExportIssue(issue)">{{ t('common.inspectItem', { index: exportReview!.itemSources[issue.itemIndex!]! + 1 }) }}<span v-if="exportReview?.scope.kind !== 'full'">{{ t('export.resultItem', { index: issue.itemIndex! + 1 }) }}</span></button><span v-else-if="issue.folderIndex !== undefined" class="muted text-xs">{{ t('common.folderNumber', { index: exportReview!.folderSources[issue.folderIndex]! + 1 }) }}<span v-if="exportReview?.scope.kind !== 'full'">{{ t('export.resultFolder', { index: issue.folderIndex + 1 }) }}</span></span></div></div><p v-if="exportIssues.length > 100" class="hint">{{ t('export.more', { count: number(exportIssues.length - 100) }) }}</p><p v-if="!exportIssues.length" class="success-message">{{ t('export.ready') }}</p></div>
+      <p class="hint">{{ t(exportErrors ? 'export.repair' : 'export.warning') }}</p><template #footer><button class="button" @click="modal = null">{{ t('export.keep') }}</button><Tooltip :text="t(exportErrors ? 'export.repair' : 'export.warning')"><button class="button primary" :disabled="!!exportErrors || !!resolvedFilename.error || !exportFresh || draftDirty" @click="exportVault"><Icon name="download" :size="16" />{{ t('export.download') }}</button></Tooltip></template>
     </Modal>
     <Modal v-if="modal === 'changes'" :title="t('audit.title')" @close="modal = null"><p class="modal-description">{{ t('audit.description') }}</p><ol v-if="changes.length" class="change-list"><li v-for="(change, index) in changes" :key="index"><span>{{ number(index + 1) }}</span>{{ translate(change) }}</li></ol><div v-else class="empty-state"><Icon name="review" :size="28" /><h3>{{ t('audit.empty') }}</h3><p>{{ t('audit.unchanged') }}</p></div><p class="hint">{{ t('audit.hint') }}</p></Modal>
     <Modal v-if="modal === 'help'" :title="t('help.title')" @close="modal = null"><p class="modal-description">{{ t('help.description') }}</p><p class="hint">{{ t('help.saving') }}</p><div class="shortcut-list"><div><span>{{ t('help.search') }}</span><kbd>{{ t('help.searchKey') }}</kbd></div><div><span>{{ t('help.export') }}</span><kbd>{{ t('help.exportKey') }}</kbd></div><div><span>{{ t('help.history') }}</span><kbd>{{ t('help.redoKey') }}</kbd><kbd>{{ t('help.undoKey') }}</kbd></div><div><span>{{ t('help.delete') }}</span><kbd>{{ t('help.deleteKey') }}</kbd></div><div><span>{{ t('help.close') }}</span><kbd>{{ t('help.escapeKey') }}</kbd></div></div><p class="hint">{{ t('help.privacy') }}</p></Modal>

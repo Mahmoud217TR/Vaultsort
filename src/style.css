@@ -427,6 +427,17 @@ kbd { font-family: var(--font-mono); border: 1px solid var(--border-default); ba
 .review-tabs button { background: none; border: none; border-bottom: 2px solid transparent; padding: 0 0 12px; color: var(--text-secondary); font-size: 12px; }
 .review-tabs button.active { color: var(--brand-text); border-bottom-color: var(--brand); font-weight: 600; }
 .review-content { flex: 1; overflow: auto; min-height: 0; padding: var(--panel-padding); }
+.duplicate-comparison { min-inline-size: 0; }
+.comparison-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 8px; }
+.comparison-scroll { max-inline-size: 100%; overflow: auto; max-block-size: 65vh; border: 1px solid var(--border-default); }
+.comparison-table { border-collapse: collapse; table-layout: fixed; inline-size: max-content; }
+.comparison-table th, .comparison-table td { inline-size: 240px; max-inline-size: 240px; padding: 12px; border: 1px solid var(--border-default); vertical-align: top; text-align: start; overflow-wrap: anywhere; }
+.comparison-table th { background: var(--bg-surface-subtle); font-weight: 600; }
+.candidate-name, .comparison-status { display: block; margin-block-end: 8px; }
+.comparison-status { font-size: 12px; color: var(--text-secondary); }
+.comparison-different > th { border-inline-start: 3px solid var(--brand); }
+.comparison-value { max-block-size: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono, monospace); }
+.export-filename-preview { overflow-wrap: anywhere; }
 .review-filter { max-width: 240px; }
 .review-content > .hint { margin-bottom: 24px; }
 .duplicate-card { border: 1px solid var(--border-default); border-radius: 8px; margin-bottom: 16px; overflow: hidden; }

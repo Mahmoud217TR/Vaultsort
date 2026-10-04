@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { clone, createFolder, deleteFolder, deleteItem, findDuplicates, maskUsername, matchesSearch, mergeFolders, moveItem, moveItems, parseRawItem, parseVault, renameFolder, scalar, serializeVault, sortItemRows, typeName, updateItem, validateVault, type VaultExport, type VaultItem } from './vault'
+import { clone, createFolder, defaultExportFilename, deleteFolder, deleteItem, findDuplicates, maskUsername, matchesSearch, mergeFolders, moveItem, moveItems, parseRawItem, parseVault, renameFolder, resolveExportFilename, scalar, serializeVault, sortItemRows, typeName, updateItem, validateVault, type VaultExport, type VaultItem } from './vault'
 import { useVault } from '../composables/useVault'
+import { compareItems, prepareVaultExport, projectComparison } from './vault'
 
 const fixture = (): VaultExport => ({
   encrypted: false, customTop: { preserved: [1, null, 'x'] },
@@ -10,6 +11,105 @@ const fixture = (): VaultExport => ({
     { id: '2', type: 1, name: 'Example', folderId: 'a', login: { username: 'person', password: 'secret-password', uris: [{ uri: 'http://EXAMPLE.com#fragment' }] } },
     { type: 9, name: 'Future type', future: { opaque: 'retain me' } },
   ],
+})
+
+describe('export filenames', () => {
+  it('rejects unsafe raw names without silently repairing them', () => {
+    for (const name of ['', '.json', '.JSON', '.', '..', 'dir/file', 'dir\\file', 'a<b', 'a>b', 'a:b', 'a"b', 'a|b', 'a?b', 'a*b', 'a\0b', 'a\nb', 'a\u007fb', 'a\u202eb', 'a\u2066b', '\ud800', '\udfff', 'report ', 'report.', 'CON', 'con.json', 'PrN.txt', 'AUX', 'NUL', 'COM1.json', 'LPT9.txt', 'COM¹', 'LPT²']) expect(resolveExportFilename(name)).toHaveProperty('error')
+  })
+  it('counts final Unicode code points, not bytes or UTF-16 units', () => {
+    for (const [name, resolved] of [['report', 'report.json'], ['report.JSON', 'report.JSON'], ['report.txt', 'report.txt.json'], ['تقرير', 'تقرير.json'], ['a\u200db', 'a\u200db.json']]) expect(resolveExportFilename(name!)).toEqual({ name: resolved })
+    const unicode = '😀'.repeat(195)
+    expect(resolveExportFilename(unicode)).toEqual({ name: `${unicode}.json` })
+    expect(resolveExportFilename('😀'.repeat(196))).toHaveProperty('error')
+    expect(resolveExportFilename('a'.repeat(195))).toEqual({ name: `${'a'.repeat(195)}.json` })
+    expect(resolveExportFilename('a'.repeat(196))).toHaveProperty('error')
+  })
+  it('generates safe bounded source-derived defaults and specified fallbacks', () => {
+    for (const scope of ['full', 'selected', 'folder'] as const) {
+      const suffix = scope === 'full' ? 'edited' : scope
+      expect(defaultExportFilename('', scope)).toBe(`vault-${suffix}.json`)
+      expect(defaultExportFilename('synthetic.JSON', scope)).toBe(`synthetic-${suffix}.json`)
+      for (const source of ['CON.json', '../unsafe\\name.json', '😀'.repeat(300), '\u202e.json']) expect(resolveExportFilename(defaultExportFilename(source, scope))).toHaveProperty('name')
+    }
+  })
+})
+
+describe('selected export preparation', () => {
+  const source = (): VaultExport => ({ encrypted: false, opaque: { excludedInformation: [1, null] },
+    folders: [{ id: 'p', name: 'Work', unknown: [7] }, { id: 'c', name: 'Work/Child' }, { id: 'x', name: 'Other' }],
+    organizations: [{ id: 'o1', extra: { keep: true } }, { id: 'o2' }, { id: 'other' }],
+    collections: [{ id: 'c1', organizationId: 'o2', opaque: [null, 1] }, { id: 'c2' }, { id: 'unrelated', organizationId: 'o1' }],
+    items: [{ id: 'same', type: 2, name: 'A', folderId: 'c', organizationId: 'o1', collectionIds: ['c1', 'c2'], opaque: { keep: true } }, { type: 1, name: 'Excluded', folderId: 'missing', login: [] as unknown as Record<string, unknown> }, { id: 'same', type: 5, name: 'C', sshKey: { privateKey: 'synthetic' } }],
+  })
+  it('clones exact source-order members with conservative structural closure and source maps', () => {
+    const doc = source(), before = serializeVault(doc)
+    const prepared = prepareVaultExport(doc, { kind: 'selected', indexes: [2, 0] })
+    expect(prepared.itemSources).toEqual([0, 2]); expect(prepared.folderSources).toEqual([0, 1])
+    expect(prepared.document.items).toEqual([doc.items![0], doc.items![2]])
+    expect(prepared.document.folders).toEqual(doc.folders!.slice(0, 2))
+    expect(prepared.document.organizations).toEqual((doc.organizations as unknown[]).slice(0, 2))
+    expect(prepared.document.collections).toEqual((doc.collections as unknown[]).slice(0, 2))
+    expect(prepared.document.opaque).toEqual(doc.opaque)
+    expect(validateVault(prepared.document).filter(issue => issue.severity === 'error')).toEqual([])
+    prepared.document.items![0]!.name = 'Isolated clone'
+    expect(serializeVault(doc)).toBe(before)
+    expect(prepareVaultExport(doc, { kind: 'full' }).document).toEqual(doc)
+  })
+  it('preserves omitted arrays, duplicate matching structural records and advisory missing metadata', () => {
+    const doc: VaultExport = { items: [{ type: 2, folderId: 'c', organizationId: 'absent', collectionIds: ['absent'] }], folders: [{ id: 'c', name: 'Child' }, { id: 'c', name: 'Other' }] }
+    const prepared = prepareVaultExport(doc, { kind: 'selected', indexes: [0] })
+    expect(prepared.document.folders).toEqual(doc.folders)
+    expect(Object.hasOwn(prepared.document, 'collections')).toBe(false)
+    expect(Object.hasOwn(prepared.document, 'organizations')).toBe(false)
+    expect(validateVault(prepared.document).some(issue => issue.message === 'validation.duplicateFolderId')).toBe(true)
+    expect(prepared.diagnostics.some(issue => issue.message === 'export.missingOwnership')).toBe(true)
+    expect(prepareVaultExport({ items: [{ type: 2 }], collections: [] }, { kind: 'selected', indexes: [0] }).document).toEqual({ items: [{ type: 2 }], collections: [] })
+  })
+  it('blocks unsafe narrowing and invalid selection without mutation, but does not change full export policy', () => {
+    for (const field of ['organizations', 'collections']) for (const bad of [null, {}, 'opaque', [null], [{}], [{ id: 42 }], [{ id: '' }]]) {
+      const doc = { items: [{ type: 2 }], [field]: bad }, before = serializeVault(doc)
+      expect(() => prepareVaultExport(doc, { kind: 'selected', indexes: [0] })).toThrow('export.unsafeOwnership')
+      expect(serializeVault(doc)).toBe(before)
+      expect(prepareVaultExport(doc, { kind: 'full' }).document).toEqual(doc)
+    }
+    for (const patch of [{ organizationId: 42 }, { collectionIds: 'c' }, { collectionIds: [42] }, { collectionIds: [''] }]) expect(() => prepareVaultExport({ items: [{ type: 2, ...patch }] } as VaultExport, { kind: 'selected', indexes: [0] })).toThrow('export.unsafeOwnership')
+    expect(() => prepareVaultExport({ items: [{ type: 2 }], collections: [{ id: 'c', organizationId: 42 }] }, { kind: 'selected', indexes: [0] })).toThrow('export.unsafeOwnership')
+    for (const indexes of [[], [-1], [0.5], [1], [0, 0]]) expect(() => prepareVaultExport({ items: [{ type: 2 }] }, { kind: 'selected', indexes })).toThrow('export.invalidScope')
+  })
+})
+
+describe('raw duplicate comparison', () => {
+  it('compares own values, ordered arrays and presence without normalizing or mutating', () => {
+    const candidates: VaultItem[] = [
+      { name: 'Same', type: 1, notes: null, login: { password: 'Synthetic', uris: [{ uri: 'https://example.test/' }, { uri: 'https://other.test' }] }, opaque: { a: 1, b: [null, ''] }, empty: {} },
+      { name: 'Same', type: 1, notes: '', login: { password: 'synthetic', uris: [{ uri: 'https://other.test' }, { uri: 'https://example.test/' }] }, opaque: { b: [null, ''], a: 1 }, empty: [] },
+      { name: 'Same', type: 5, sshKey: { privateKey: 'synthetic-private' } },
+    ]
+    const before = JSON.stringify(candidates), rows = compareItems(candidates)
+    expect(rows.find(row => JSON.stringify(row.path) === '["name"]')?.different).toBe(false)
+    for (const path of [['type'], ['notes'], ['login', 'password'], ['login', 'uris', 0, 'uri'], ['empty'], ['sshKey', 'privateKey']]) expect(rows.find(row => JSON.stringify(row.path) === JSON.stringify(path))?.different).toBe(true)
+    expect(rows.find(row => JSON.stringify(row.path) === '["notes"]')?.values.map(value => value.present)).toEqual([true, true, false])
+    const reordered = compareItems([candidates[0]!, { ...candidates[0], opaque: { b: [null, ''], a: 1 } }])
+    expect(reordered.every(row => !row.different)).toBe(true)
+    expect(JSON.stringify(candidates)).toBe(before)
+  })
+  it('projects no protected strings or labels while preserving complete disclosed values', () => {
+    const candidates = [{ name: 'Public', type: 2, 'synthetic-key-secret': { value: 'synthetic-value-secret' }, notes: '<img src="https://literal.test">' }, { name: 'Public', type: 2, notes: null }]
+    const rows = compareItems(candidates)
+    const masked = JSON.stringify(projectComparison(rows, true))
+    for (const secret of ['synthetic-key-secret', 'synthetic-value-secret', 'https://literal.test']) expect(masked).not.toContain(secret)
+    const disclosed = JSON.stringify(projectComparison(rows, false))
+    expect(disclosed).toContain('synthetic-key-secret'); expect(disclosed).toContain('synthetic-value-secret')
+    expect(projectComparison(rows, true).every(row => !Object.hasOwn(row, 'path'))).toBe(true)
+  })
+  it('includes every candidate and nested literal prototype property without pollution', () => {
+    const candidates = Array.from({ length: 100 }, (_, index) => JSON.parse(`{"name":"Group","opaque":{"__proto__":"synthetic-${index}"}}`) as VaultItem)
+    const rows = compareItems(candidates)
+    expect(rows.every(row => row.values.length === 100)).toBe(true)
+    expect(rows.some(row => row.path.includes('__proto__') && row.different)).toBe(true)
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
 })
 
 describe('import and preservation', () => {
