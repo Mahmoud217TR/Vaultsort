@@ -4,13 +4,93 @@ A local-first, browser-only editor for **unencrypted Bitwarden / Vaultwarden JSO
 
 Vault exports can be awkward to reorganize by hand. Vaultsort provides an in-memory workspace while preserving unknown properties and unsupported item types. It is an export editor, **not a password manager or an encryption tool**.
 
+<p align="center">
+  <img src="art/vaultsort-feature-showcase.webp" width="1100" alt="Vaultsort feature artwork showing the local-first workspace, privacy controls, folder organization, selective export, duplicate review, Arabic support, and light and dark themes" />
+  <br />
+  <sub>A local-first workspace for organizing and reviewing plaintext vault exports.</sub>
+</p>
+
 ## Status
 
 Pre-release and under development. `package.json` currently identifies the project as `0.1.0`; that is not a claim of a published release. See [CHANGELOG.md](CHANGELOG.md) for unreleased work. No independent security audit is claimed; keep an original backup and check exported files before re-importing.
 
 ## Screenshots
 
-_Screenshots coming soon: import screen, folder management, and English/Arabic workspaces in light/dark mode. Use synthetic data only; sanitize all screenshots before sharing._
+### Workspace
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="art/vault-workspace.webp" width="540" alt="Vaultsort dark workspace with folder navigation, an item table, and Privacy Mode enabled" /><br />
+      <sub>Browse and filter vault items with Privacy Mode enabled.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="art/vault-summary.webp" width="540" alt="Import summary dialog showing vault item, folder, and item-type counts" /><br />
+      <sub>Review the import summary before entering the workspace.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="art/login-item-editor.webp" width="540" alt="Login item selected in the workspace with its editing panel open" /><br />
+      <sub>Edit login details alongside the vault's item list.</sub>
+    </td>
+    <td align="center">
+      <img src="art/secure-note-editor.webp" width="540" alt="Secure note selected with its name and note content visible in the editing panel" /><br />
+      <sub>Inspect and edit secure-note content in the side panel.</sub>
+    </td>
+  </tr>
+</table>
+
+### Organization and review
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="art/folder-management.webp" width="540" alt="Folder management dialog displaying nested folders and organization actions" /><br />
+      <sub>Organize folder hierarchies and access folder-level exports.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="art/duplicate-review.webp" width="540" alt="Vault review screen listing validation findings and potential duplicate groups" /><br />
+      <sub>Review validation findings and potential duplicates.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="art/vault-export.webp" width="540" alt="Vault export review dialog with validation results and a JSON download action" /><br />
+      <sub>Review before downloading JSON; exports support full, selected-item, and folder scopes.</sub>
+    </td>
+  </tr>
+</table>
+
+### Localization
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="art/arabic-support.webp" width="540" alt="Arabic Vaultsort import screen with right-to-left text and layout" /><br />
+      <sub>Arabic guidance and right-to-left layout from the import screen.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="art/rtl-workspace.webp" width="540" alt="Arabic workspace with right-to-left navigation, controls, and vault item table" /><br />
+      <sub>First-class Arabic and RTL support throughout the workspace.</sub>
+    </td>
+  </tr>
+</table>
+
+### Themes
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="art/light-mode.webp" width="540" alt="Vaultsort import screen in the light theme with white and slate surfaces" /><br />
+      <sub>Light theme with restrained Azure actions.</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="art/dark-mode.webp" width="540" alt="Vaultsort import screen in the dark theme with navy surfaces and Azure actions" /><br />
+      <sub>Dark theme with the same controls and workflow.</sub>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
