@@ -6,6 +6,10 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 
 ### Added
 
+- Editable export filenames with scope-specific defaults, Unicode-aware 200-code-point validation and an explicit browser/OS saved-name boundary; original-copy downloads remain byte-exact.
+- Selected-item and recursive actual/virtual folder JSON exports with source-order structural closure, unknown-data preservation, result validation and mapped source-warning links. Unsafe ownership narrowing and duplicate paths within folder-export branches block without repair.
+- Complete privacy-aware duplicate comparison with explicit name-only rename, confirmed single-candidate deletion and undo, plus in-memory group/rule ignore and restore. No automatic credential merging or survivor choice.
+
 - Independent session-only Notes, Date created, and Last modified columns, initially hidden, with localized dates and privacy-gated literal full-note inspection.
 - Compact labelled Filters/Sort/Fields disclosures, contextual revision-guarded item-warning navigation, and numeric SSH type 5 discovery without a new SSH editor.
 - Localized action help and explicit new-tab GitHub/Issues links, with original-copy access retained in the workspace sidebar.
@@ -33,6 +37,9 @@ Notable changes are recorded here following [Keep a Changelog](https://keepachan
 - Raised import file-badge and step-number text contrast using the existing secondary-text token.
 
 ### Security
+
+- Export/comparison requests are revision-bound; subset downloads do not mark whole-vault edits saved. Ignore state never modifies documents/history/validation and resets on document changes. Comparison values and sensitive labels are projected to fixed masks before DOM binding.
+- Documented that subsets preserve opaque root metadata and are not sanitization/anonymization; ownership/import-route limitations are disclosed without claiming actual local importer verification.
 
 - Vault documents, original bytes, drafts, and history remain in memory; only language/theme preferences are persisted.
 - DOM privacy masks, escaped imported content, local-only CSP, and preservation/security regression tests are part of the current implementation.

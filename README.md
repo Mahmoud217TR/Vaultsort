@@ -19,7 +19,8 @@ _Screenshots coming soon: import screen, folder management, and English/Arabic w
 - Sort items alphabetically, by creation date, or by last-modified date in ascending/descending order. Sorting is view-only; export order is unchanged. Date sorting uses imported `creationDate`/`revisionDate`; missing or invalid dates stay last. Sort choices stay in memory and reset with the vault.
 - Toggle **Show dates** to display creation/last-modified columns, formatted in the selected language and your browser's local time zone. Missing/invalid dates show a dash; date visibility resets with the vault and is not persisted.
 - Create, rename, move, merge, and safely delete folders and subfolders. Slash-separated folder names retain the native export structure; folder deletion reassigns items rather than deleting credentials.
-- Inspect possible duplicates and validation results. Nothing is merged automatically; structural errors block modified export, while warnings are advisory.
+- Name full, selected-item and recursive actual/virtual folder exports. Subsets preserve source order, referenced structures and unknown properties without changing the loaded vault.
+- Compare every candidate in a duplicate group, with literal field differences and privacy-safe masks. Rename or confirm deletion of one candidate with undo; ignore/restore groups in review only. Nothing is merged automatically; structural errors block modified export, while warnings are advisory.
 - Undo/redo up to 30 in-memory snapshots, a secret-free action history, and unsaved-work warnings.
 - Privacy Mode on by default: DOM masks for sensitive values, hidden notes/raw JSON, and disabled secret editing/reveal/copy until turned off.
 - English (`en`)—the canonical/default locale—and Arabic (`ar`) with first-class RTL support. [Additional translations are welcome](CONTRIBUTING.md#translations).
@@ -78,6 +79,44 @@ The build type-checks the app and writes static assets to `dist/`. Preview serve
 5. Review duplicate candidates and validation. Export the modified vault and verify the download before closing. Only applied edits are exported; no original file is overwritten.
 6. Follow your password manager's import guidance and check the result. Imports may create duplicates; Vaultsort cannot guarantee compatibility with every export/import version.
 
+### Export scope and filenames
+
+**Export vault** saves the complete applied document. **Export selected** includes selections
+across pages; folder download actions include direct/descendant items and empty branch records,
+plus existing ancestor structures without ancestor items. Filters do not narrow a folder export.
+Review shows scope/count, validation and an editable source-derived filename. Subset downloads
+do **not** mark all working-vault edits saved. Apply/reset pending drafts first; changed documents
+or selections require reopening review. Original-copy bytes and name remain unchanged.
+
+Names are basenames, not paths. Unsafe/reserved names block download rather than being silently
+repaired; `.json` is appended if absent. The final limit is **200 Unicode code points**, with no
+additional byte limit. The app requests the displayed name; browser/OS adjustments, collisions
+and filesystem limits can affect the saved name or successful saving.
+
+Folder export blocks duplicate full paths inside the requested actual/virtual branch. Duplicates
+outside it do not activate this guard; selected export retains its independent validation rules.
+Unsafe narrowing of malformed organization/collection metadata blocks either subset operation
+without dropping, coercing or retaining that metadata wholesale. Missing metadata remains advisory.
+
+**Subset export is not sanitization or anonymization:** opaque root metadata is preserved and may
+contain information outside scope. Ownership references are not converted. Personal and authorized
+organization import routes differ; combined folder/collection lists, empty envelopes, mixed ownership,
+unsupported types and unknown metadata can be handled differently or lost by downstream importers.
+No actual local importer verification or lossless multi-owner import guarantee is claimed.
+
+### Duplicate review
+
+**Compare group** opens all candidates, including nested unknown properties and ordered arrays.
+Absent, null and empty stored values differ; object-key ordering alone does not. Privacy Mode
+removes protected values and sensitive imported labels from comparison DOM content. Turning it
+off shows complete literal text, not HTML, images or active imported links. Rename applies only
+the chosen name; Delete confirms the exact candidate/count. Neither chooses a survivor or merges
+credentials automatically.
+
+**Ignore this group** hides only that group/rule from active review, not validation or exports.
+Restore ignored groups explicitly. Ignores survive view/preference changes but clear on any
+document change, undo/redo, replacement or close. Comparison, filename and ignore state stay in memory.
+
 **Filters**, **Sort**, and **Fields** disclose compact controls. Notes, Date created, and Last
 modified are independent, initially hidden, session-only columns. Full notes are inspected as
 literal text only with Privacy Mode off. Sorting changes the view, not export order. Numeric SSH
@@ -106,6 +145,9 @@ Tests cover preservation, folder operations, validation, session history, DOM pr
 Refinement acceptance evidence and remaining gates are recorded in
 [`specs/001-refine-vault-usability/implementation.md`](specs/001-refine-vault-usability/implementation.md).
 This is not a cross-browser or representative-user acceptance claim.
+Export/comparison regression and Chromium native-zoom/offline/scale evidence is recorded in
+[`specs/002-expand-export-review/implementation.md`](specs/002-expand-export-review/implementation.md).
+Firefox, Safari, physical touch hardware and actual local imports remain unverified.
 
 ## License
 

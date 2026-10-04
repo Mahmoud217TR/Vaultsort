@@ -37,6 +37,21 @@ async function importSource(source: VaultExport) {
 }
 
 describe('editor security', () => {
+  it('keeps complete duplicate comparisons literal and clears protected DOM values/keys on privacy changes', async () => {
+    const secrets = ['synthetic-password-A', 'synthetic-password-B', 'synthetic-label-secret', 'synthetic-custom-secret', 'synthetic-private-key']
+    await importSource({ items: [0, 1].map(index => ({ type: 1, name: 'Synthetic duplicates', notes: '<img src="https://literal.test/never-fetch"><script>literal()</script>', login: { username: 'synthetic-shared', password: secrets[index], uris: [{ uri: 'https://example.test' }] }, fields: [{ name: secrets[2], value: secrets[3] }], sshKey: { privateKey: secrets[4] }, [secrets[2]!]: { value: secrets[3] } })) })
+    await wrapper!.get('.review-nav').trigger('click'); await wrapper!.get('.compare-group').trigger('click')
+    const comparison = () => wrapper!.get('.duplicate-comparison')
+    const domValues = () => comparison().html() + comparison().findAll('input,textarea').map(input => (input.element as HTMLInputElement).value).join(' ')
+    for (const secret of secrets) expect(domValues()).not.toContain(secret)
+    expect(comparison().findAll('thead th')).toHaveLength(3)
+    expect(comparison().text()).toContain('Different')
+    await wrapper!.get('.privacy-toggle').trigger('click')
+    for (const secret of secrets) expect(domValues()).toContain(secret)
+    expect(comparison().find('img,script,a[href]').exists()).toBe(false)
+    await wrapper!.get('.privacy-toggle').trigger('click')
+    for (const secret of secrets) expect(domValues()).not.toContain(secret)
+  })
   it.each(['hide', 'replace', 'delete', 'undo', 'redo', 'close'] as const)('clears all note types on %s without retaining stale detail', async action => {
     const notes = ['Synthetic login secret', '<script>literal()</script>\n<img src="https://literal.test">', '🗝'.repeat(150) + '\nالعربية literal SSH', 'Unknown synthetic note']
     const source: VaultExport = { encrypted: false, opaque: { unchanged: true }, items: [1, 2, 5, 9].map((type, index) => ({ type, name: `Synthetic ${index}`, notes: notes[index] })), folders: [] }

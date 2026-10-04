@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clone, createFolder, deleteFolder, folderTree, mergeFolders, moveFolder, renameFolder, serializeVault, type VaultExport } from './vault'
+import { clone, createFolder, deleteFolder, folderTree, mergeFolders, moveFolder, prepareVaultExport, renameFolder, serializeVault, validateVault, type VaultExport } from './vault'
 import { useVault } from '../composables/useVault'
 
 const nested = (): VaultExport => ({
@@ -19,6 +19,48 @@ const nested = (): VaultExport => ({
     { id: '4', type: 2, folderId: 'similar' },
     { id: '5', type: 2 },
   ],
+})
+
+describe('folder branch export', () => {
+  it('retains exact recursive and nested members/empty records without inventing ancestors', () => {
+    const doc = nested(); doc.folders!.push({ id: 'empty', name: 'Work/Empty' })
+    const before = serializeVault(doc)
+    const parent = prepareVaultExport(doc, { kind: 'folder', path: 'Work', folderIndex: 0 })
+    expect(parent.itemSources).toEqual([0, 1, 2]); expect(parent.folderSources).toEqual([0, 1, 2, 6])
+    const child = prepareVaultExport(doc, { kind: 'folder', path: 'Work/Development', folderIndex: 1 })
+    expect(child.itemSources).toEqual([1, 2]); expect(child.folderSources).toEqual([0, 1, 2])
+    const virtual = prepareVaultExport(doc, { kind: 'folder', path: 'Projects', folderIndex: null })
+    expect(virtual.document.folders).toEqual([doc.folders![5]])
+    expect(virtual.document.items).toEqual([])
+    expect(serializeVault(doc)).toBe(before)
+    expect(prepareVaultExport({ folders: [{ id: 'empty', name: 'Empty' }] }, { kind: 'folder', path: 'Empty', folderIndex: 0 }).document).toEqual({ folders: [{ id: 'empty', name: 'Empty' }] })
+  })
+  it('blocks duplicate actual root/descendant paths in actual or virtual branches, not outside them', () => {
+    for (const path of ['Work', 'Work/Development']) {
+      const doc = nested(); doc.folders!.push({ id: 'different-id', name: path })
+      const before = serializeVault(doc)
+      expect(() => prepareVaultExport(doc, { kind: 'folder', path: 'Work', folderIndex: 0 })).toThrow('export.ambiguousBranch')
+      expect(serializeVault(doc)).toBe(before)
+      expect(() => prepareVaultExport(doc, { kind: 'selected', indexes: [0] })).not.toThrow()
+    }
+    const virtual = { folders: [{ id: 'one', name: 'Virtual/Child' }, { id: 'two', name: 'Virtual/Child' }] }
+    expect(() => prepareVaultExport(virtual, { kind: 'folder', path: 'Virtual', folderIndex: null })).toThrow('export.ambiguousBranch')
+    const doc = nested(); doc.folders!.push({ id: 'duplicate-parent', name: 'Work' }, { id: 'a', name: 'Work/Other' }, { id: 'b', name: 'Work/Other' }, { id: 'd', name: 'Workshops' })
+    const result = prepareVaultExport(doc, { kind: 'folder', path: 'Work/Development', folderIndex: 1 })
+    expect(result.folderSources).toEqual([0, 1, 2, 6]); expect(result.itemSources).toEqual([1, 2])
+  })
+  it('uses literal names, exact empty-name identity and independent structural validation', () => {
+    const doc: VaultExport = { folders: [{ id: 'empty', name: '' }, { id: 'bad' }, { id: 'literal', name: ' Work//Child ' }, { id: 'other', name: 'work/Child' }], items: [{ type: 2, folderId: 'empty' }, { type: 2, folderId: 'literal' }, { type: 2 }] }
+    expect(prepareVaultExport(doc, { kind: 'folder', path: '', folderIndex: 0 }).itemSources).toEqual([0])
+    expect(prepareVaultExport(doc, { kind: 'folder', path: ' Work', folderIndex: null }).itemSources).toEqual([1])
+    expect(() => prepareVaultExport(doc, { kind: 'folder', path: '', folderIndex: 1 })).toThrow('validation.folderName')
+    doc.folders!.push({ id: 'second-empty', name: '' })
+    expect(() => prepareVaultExport(doc, { kind: 'folder', path: '', folderIndex: 0 })).toThrow('export.ambiguousBranch')
+    const ids: VaultExport = { folders: [{ id: 'same', name: 'Work' }, { id: 'same', name: 'Other' }], items: [{ type: 2, folderId: 'same' }] }
+    expect(validateVault(prepareVaultExport(ids, { kind: 'folder', path: 'Work', folderIndex: 0 }).document).some(issue => issue.message === 'validation.duplicateFolderId')).toBe(true)
+    expect(() => prepareVaultExport({ folders: [{ id: 'f', name: 'F' }], collections: {} }, { kind: 'folder', path: 'F', folderIndex: 0 })).toThrow('export.unsafeOwnership')
+    for (const request of [{ path: 'Missing', folderIndex: null }, { path: 'Other', folderIndex: 0 }, { path: 'Work', folderIndex: -1 }]) expect(() => prepareVaultExport(ids, { kind: 'folder', ...request })).toThrow('export.invalidScope')
+  })
 })
 
 describe('nested folders without a new export structure', () => {

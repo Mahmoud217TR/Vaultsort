@@ -78,6 +78,83 @@ export function parseVault(source: string): VaultExport {
 }
 export const serializeVault = (doc: VaultExport) => JSON.stringify(doc, null, 2)
 
+const unsafeFilename = /[/\\<>:"|?*\p{Cc}\p{Cs}\u202a-\u202e\u2066-\u2069]/u
+export function resolveExportFilename(raw: string): { name: string; error?: never } | { error: string; name?: never } {
+  if (!raw || /^\.json$/i.test(raw) || /^[.]+$/.test(raw) || unsafeFilename.test(raw) || /[ .]$/.test(raw)) return { error: 'export.invalidFilename' }
+  if (/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(raw.split('.')[0]!)) return { error: 'export.reservedFilename' }
+  const name = /\.json$/i.test(raw) ? raw : `${raw}.json`
+  return Array.from(name).length > 200 ? { error: 'export.longFilename' } : { name }
+}
+export function defaultExportFilename(source: string, scope: 'full' | 'selected' | 'folder'): string {
+  const suffix = `-${scope === 'full' ? 'edited' : scope}.json`
+  const stem = Array.from(source.replace(/\.json$/i, '').replace(new RegExp(unsafeFilename.source, 'gu'), '').replace(/^[ .]+|[ .]+$/g, '')).slice(0, 200 - suffix.length).join('')
+  const proposed = `${stem}${suffix}`
+  return stem && !/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])$/i.test(stem.split('.')[0]!) && resolveExportFilename(proposed).name ? proposed : `vault${suffix}`
+}
+
+export type ExportScope = { kind: 'full' } | { kind: 'selected'; indexes: number[] } | { kind: 'folder'; path: string; folderIndex: number | null }
+export interface PreparedExport { document: VaultExport; itemSources: number[]; folderSources: number[]; diagnostics: Issue[] }
+export function prepareVaultExport(source: VaultExport, scope: ExportScope): PreparedExport {
+  const document = clone(source)
+  let itemSources = items(source).map((_, index) => index)
+  let folderSources = folders(source).map((_, index) => index)
+  const diagnostics: Issue[] = []
+  if (scope.kind !== 'full') {
+    const branch = new Set<number>()
+    if (scope.kind === 'selected') {
+      if (!scope.indexes.length || new Set(scope.indexes).size !== scope.indexes.length || scope.indexes.some(index => !Number.isInteger(index) || index < 0 || index >= items(source).length)) throw new Error('export.invalidScope')
+      itemSources = [...scope.indexes].sort((a, b) => a - b)
+    } else {
+      if (scope.folderIndex === null) {
+        if (!scope.path || !folderTree(source).some(row => row.index === null && row.path === scope.path)) throw new Error('export.invalidScope')
+      } else {
+        if (!Number.isInteger(scope.folderIndex) || scope.folderIndex < 0 || !folders(source)[scope.folderIndex]) throw new Error('export.invalidScope')
+        if (typeof folders(source)[scope.folderIndex]!.name !== 'string') throw new Error('validation.folderName')
+        if (folders(source)[scope.folderIndex]!.name !== scope.path) throw new Error('export.invalidScope')
+      }
+      const seen = new Set<string>()
+      folders(source).forEach((folder, index) => {
+        if (typeof folder.name !== 'string' || !(scope.path ? withinFolder(folder.name, scope.path) : folder.name === '')) return
+        if (seen.has(folder.name)) throw new Error('export.ambiguousBranch')
+        seen.add(folder.name); branch.add(index)
+      })
+      const ids = new Set([...branch].map(index => folders(source)[index]!.id).filter(id => typeof id === 'string' && id))
+      itemSources = items(source).flatMap((item, index) => typeof item.folderId === 'string' && !!item.folderId && ids.has(item.folderId) ? [index] : [])
+    }
+    const chosen = itemSources.map(index => items(source)[index]!)
+    const folderIds = new Set(chosen.map(item => item.folderId).filter(id => typeof id === 'string' && id))
+    const paths = new Set<string>()
+    folders(source).forEach((folder, index) => { if (folderIds.has(folder.id) || branch.has(index)) {
+      let parent = folderParent(text(folder.name))
+      while (parent) { paths.add(parent); parent = folderParent(parent) }
+    } })
+    folderSources = folders(source).flatMap((folder, index) => branch.has(index) || folderIds.has(folder.id) || paths.has(text(folder.name)) ? [index] : [])
+    if (Object.hasOwn(document, 'items')) document.items = itemSources.map(index => document.items![index]!)
+    if (Object.hasOwn(document, 'folders')) document.folders = folderSources.map(index => document.folders![index]!)
+
+    const organizationIds = new Set<string>(), collectionIds = new Set<string>()
+    for (const item of chosen) {
+      if (item.organizationId != null && typeof item.organizationId !== 'string' || item.collectionIds != null && (!Array.isArray(item.collectionIds) || item.collectionIds.some(id => typeof id !== 'string' || !id))) throw new Error('export.unsafeOwnership')
+      if (item.organizationId) organizationIds.add(item.organizationId)
+      for (const id of (item.collectionIds ?? []) as string[]) collectionIds.add(id)
+    }
+    for (const key of ['collections', 'organizations'] as const) {
+      if (!Object.hasOwn(source, key)) continue
+      const records = source[key]
+      if (!Array.isArray(records) || records.some(record => !isObject(record) || typeof record.id !== 'string' || !record.id || key === 'collections' && record.organizationId != null && typeof record.organizationId !== 'string')) throw new Error('export.unsafeOwnership')
+      const ids = key === 'collections' ? collectionIds : organizationIds
+      const retained = (records as JsonObject[]).filter(record => ids.has(record.id as string))
+      if (key === 'collections') for (const record of retained) if (record.organizationId) organizationIds.add(record.organizationId as string)
+      document[key] = clone(retained)
+    }
+    if ([...collectionIds].some(id => !Array.isArray(document.collections) || !document.collections.some(record => isObject(record) && record.id === id)) || [...organizationIds].some(id => !Array.isArray(document.organizations) || !document.organizations.some(record => isObject(record) && record.id === id))) diagnostics.push({ severity: 'warning', message: 'export.missingOwnership' })
+  }
+  if (items(document).some(item => item.organizationId || Array.isArray(item.collectionIds) && item.collectionIds.length)) diagnostics.push({ severity: 'warning', message: 'export.ownershipRoute' })
+  if (Object.hasOwn(document, 'folders') && Object.hasOwn(document, 'collections')) diagnostics.push({ severity: 'warning', message: 'export.combinedLists' })
+  if (!items(document).length) diagnostics.push({ severity: 'warning', message: 'export.emptyCompatibility' })
+  return { document, itemSources, folderSources, diagnostics }
+}
+
 export function parseRawItem(source: string): VaultItem {
   let value: unknown
   try { value = JSON.parse(source) } catch { throw new Error('errors.rawJson') }
@@ -210,6 +287,62 @@ export function domain(value: string): string {
 }
 export type DuplicateKind = 'exact' | 'credential' | 'name' | 'username' | 'domain'
 export interface DuplicateGroup { kind: DuplicateKind; indexes: number[] }
+export interface DuplicateRequest extends DuplicateGroup { revision: number }
+export interface CandidateRequest { group: DuplicateRequest; index: number; name?: string }
+export const groupSignature = (group: DuplicateGroup) => JSON.stringify([group.kind, [...group.indexes].sort((a, b) => a - b)])
+export interface ComparisonRow { id: number; path: (string | number)[]; values: { present: boolean; value?: unknown }[]; different: boolean }
+export interface ComparisonViewRow {
+  id: number; labelKey: string; label?: string; different: boolean
+  values: { state: 'absent' | 'masked' | 'null' | 'emptyString' | 'emptyObject' | 'emptyArray' | 'object' | 'array' | 'value'; text?: string }[]
+}
+function equalJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((value, index) => equalJson(value, right[index]))
+  if (!isObject(left) || !isObject(right)) return false
+  const keys = Object.keys(left)
+  return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && equalJson(left[key], right[key]))
+}
+export function compareItems(candidates: VaultItem[]): ComparisonRow[] {
+  const paths = new Map<string, (string | number)[]>()
+  function visit(value: unknown, path: (string | number)[]) {
+    if (path.length) paths.set(JSON.stringify(path), path)
+    if (Array.isArray(value)) value.forEach((entry, index) => visit(entry, [...path, index]))
+    else if (isObject(value)) for (const key of Object.keys(value)) visit(value[key], [...path, key])
+  }
+  for (const candidate of candidates) visit(candidate, [])
+  return [...paths.values()].map((path, id) => {
+    const values = candidates.map(candidate => {
+      let value: unknown = candidate
+      for (const key of path) {
+        if ((!isObject(value) && !Array.isArray(value)) || !Object.hasOwn(value, key)) return { present: false }
+        value = (value as Record<string | number, unknown>)[key]
+      }
+      return { present: true, value }
+    })
+    const first = values[0]
+    return { id, path, values, different: values.some(value => value.present !== first?.present || !equalJson(value.value, first?.value)) }
+  })
+}
+export function projectComparison(rows: ComparisonRow[], privacy: boolean): ComparisonViewRow[] {
+  const labels = new Map([
+    ['name', 'editor.name'], ['type', 'editor.type'], ['folderId', 'workspace.folder'], ['organizationId', 'editor.organizationId'],
+    ['favorite', 'editor.favorite'], ['creationDate', 'editor.creationDate'], ['revisionDate', 'editor.revisionDate'], ['deletedDate', 'editor.deletedDate'],
+  ])
+  return rows.map(row => {
+    const key = row.path.length === 1 ? labels.get(String(row.path[0])) : undefined
+    const publicValue = !!key && row.values.every(value => !isObject(value.value) && !Array.isArray(value.value))
+    return { id: row.id, labelKey: key ?? 'comparison.field', ...(privacy ? {} : { label: row.path.map(part => typeof part === 'number' ? `[${part}]` : JSON.stringify(part)).join('.') }), different: row.different,
+      values: row.values.map(({ present, value }) => {
+        if (!present) return { state: 'absent' as const }
+        if (privacy && !publicValue) return { state: 'masked' as const }
+        if (value === null) return { state: 'null' as const }
+        if (value === '') return { state: 'emptyString' as const }
+        if (Array.isArray(value)) return { state: value.length ? 'array' as const : 'emptyArray' as const }
+        if (isObject(value)) return { state: Object.keys(value).length ? 'object' as const : 'emptyObject' as const }
+        return { state: 'value' as const, text: String(value) }
+      }) }
+  })
+}
 export const duplicateLabel: Record<DuplicateKind, string> = {
   exact: 'review.exact', credential: 'review.credential', name: 'review.name', username: 'review.username', domain: 'review.domain',
 }

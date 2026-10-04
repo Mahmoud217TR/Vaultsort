@@ -37,7 +37,7 @@ describe('locale coverage', () => {
   })
 
   it('has no hardcoded UI text or accessible labels in Vue templates', () => {
-    for (const file of ['src/App.vue', 'src/components/ItemEditor.vue', 'src/components/ReviewPanel.vue', 'src/components/Modal.vue', 'src/components/Icon.vue']) {
+    for (const file of ['src/App.vue', 'src/components/ItemEditor.vue', 'src/components/ReviewPanel.vue', 'src/components/DuplicateComparison.vue', 'src/components/Modal.vue', 'src/components/Icon.vue']) {
       const template = parseSfc(readFileSync(file, 'utf8')).descriptor.template!.content
       const visit = (node: TemplateChildNode) => {
         if (node.type === 2) expect(node.content.trim(), file).toBe('')
@@ -98,6 +98,42 @@ describe('pre-paint preference restoration', () => {
 })
 
 describe('language and theme combinations', () => {
+  it.each([['en', 'light'], ['en', 'dark'], ['ar', 'light'], ['ar', 'dark']])('localizes export/comparison and existing resolution messages in %s / %s with only preference storage', async (language, selectedTheme) => {
+    const source = { encrypted: false, folders: [{ id: 'f', name: 'Work' }], items: [0, 1].map(index => ({ type: 1, name: 'Synthetic same', folderId: 'f', login: { username: 'synthetic', password: `synthetic-private-${index}`, uris: [{ uri: 'https://example.test' }] } })) }
+    const encoded = new TextEncoder().encode(JSON.stringify(source)), bytes = new ArrayBuffer(encoded.length)
+    new Uint8Array(bytes).set(encoded)
+    class Reader {
+      result = bytes
+      onload: (() => void) | null = null
+      readAsArrayBuffer() { queueMicrotask(() => this.onload?.()) }
+      abort() {}
+    }
+    vi.stubGlobal('FileReader', Reader); vi.spyOn(window, 'confirm').mockReturnValue(true)
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+    setLanguage(language); setTheme(selectedTheme)
+    wrapper = mount(App, { attachTo: document.body })
+    Object.defineProperty(wrapper.get('input[type=file]').element, 'files', { value: [new File([''], 'synthetic.json')] })
+    await wrapper.get('input[type=file]').trigger('change'); await flushPromises(); await wrapper.get('dialog .primary').trigger('click')
+    await wrapper.get('tbody input[type=checkbox]').setValue(true); await wrapper.get('.export-selected').trigger('click')
+    expect(wrapper.get('dialog').text()).toContain(i18n.global.t('export.filename'))
+    await wrapper.get('#export-filename').setValue('CON.json')
+    expect(wrapper.get('#export-filename-error').text()).toBe(i18n.global.t('export.reservedFilename'))
+    await wrapper.get('dialog footer .button').trigger('click')
+    await wrapper.get('.review-nav').trigger('click'); await wrapper.get('.compare-group').trigger('click')
+    expect(wrapper.get('.comparison-back').text()).toBe(i18n.global.t('comparison.back'))
+    expect(wrapper.get('.duplicate-comparison').text()).not.toContain('synthetic-private-')
+    await wrapper.get('.ignore-group').trigger('click'); await wrapper.get('.restore-groups').trigger('click'); await wrapper.get('.compare-group').trigger('click')
+    await wrapper.get('.rename-candidate').trigger('click'); await wrapper.get('.comparison-name-input').setValue('اسم اصطناعي')
+    await wrapper.get('.comparison-name-form .primary').trigger('click')
+    expect(wrapper.get('[role=status]').text()).toContain(i18n.global.t('comparison.renamed'))
+    setLanguage(language === 'ar' ? 'en' : 'ar'); await flushPromises()
+    expect(wrapper.get('[role=status]').text()).toContain(i18n.global.t('comparison.renamed'))
+    await wrapper.get('.changes-button').trigger('click')
+    expect(wrapper.get('.change-list').text()).toContain(translate({ key: 'audit.item', params: { index: 1 }, fields: ['audit.name'] }))
+    expect(localStorage.length).toBe(2)
+    expect(Object.keys(localStorage).sort()).toEqual(['vaultsort.language', 'vaultsort.theme'])
+    expect(source.items[0]!.name).toBe('Synthetic same')
+  })
   it('uses the canonical theme tokens and logical RTL layout rules', () => {
     const css = readFileSync('src/style.css', 'utf8')
     const style = document.createElement('style')
